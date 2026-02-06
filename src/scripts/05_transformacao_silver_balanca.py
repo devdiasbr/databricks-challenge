@@ -28,6 +28,7 @@ if os.path.exists(hadoop_home):
         os.environ['PATH'] += os.pathsep + hadoop_bin
     print(f"✅ HADOOP_HOME configurado: {hadoop_home}")
 
+import utils.config as config
 from utils.transformations import BaseTransform, normalize_column_name
 
 def get_spark_session():
@@ -54,44 +55,51 @@ def get_spark_session():
     return spark
 
 def configure_azure_access(spark):
-    """Configura o acesso ao Azure Blob Storage usando SAS Tokens do .env."""
+    """Configura o acesso ao Azure Blob Storage usando SAS Tokens do config.py."""
     
-    # Mapeamento de containers para chaves no .env
-    configs = [
-        ("grupo4storage", "raw", "AZURE_TARGET_STORAGE_RAW_URL"),
-        ("grupo4storage", "trusted", "AZURE_TARGET_STORAGE_TRUSTED_URL")
-    ]
+    # Lista de layers para configurar
+    layers = ["raw", "trusted"]
     
-    for account, container, env_var in configs:
-        url = os.getenv(env_var)
+    for layer in layers:
+        url = config.get_target_url(layer)
         if not url:
-            print(f"⚠️ Aviso: Variável {env_var} não encontrada.")
+            print(f"⚠️ Aviso: URL para camada {layer} não encontrada no config.")
             continue
             
         # Extrai o SAS Token da URL (tudo depois do ?)
+        sas_token = ""
+        account = "grupo4storage" # Default
+        
         if "?" in url:
             sas_token = url.split("?")[1]
-        else:
-            sas_token = "" 
+            
+        # Tenta extrair account da URL
+        try:
+            account = url.split("https://")[1].split(".")[0]
+        except:
+            pass
             
         if sas_token:
-            # Configuração para WASBS (Blob Storage) - Mais compatível localmente
-            # Formato: fs.azure.sas.<container>.<account>.blob.core.windows.net
-            spark.conf.set(f"fs.azure.sas.{container}.{account}.blob.core.windows.net", sas_token)
+            # Configuração para WASBS (Blob Storage)
+            spark.conf.set(f"fs.azure.sas.{layer}.{account}.blob.core.windows.net", sas_token)
+            # Também configura para o container genérico se o nome for diferente da layer?
+            # Na verdade, o container costuma ser o nome da layer (raw, trusted).
+            # Mas vamos garantir configurar para o container específico se extraído.
             
-            # Configuração ABFSS (Opcional, mantida caso rode em ambiente que suporte)
+            # Configuração ABFSS
             spark.conf.set(f"fs.azure.account.auth.type.{account}.dfs.core.windows.net", "SAS")
             spark.conf.set(f"fs.azure.sas.token.provider.type.{account}.dfs.core.windows.net", "org.apache.hadoop.fs.azurebfs.sas.FixedSASTokenProvider")
             spark.conf.set(f"fs.azure.sas.fixed.token.{account}.dfs.core.windows.net", sas_token)
             
-            print(f"✅ Configurado acesso SAS para {account}/{container}")
+            print(f"✅ Configurado acesso SAS para {account}/{layer}")
 
-def list_raw_folders(prefix="balanco_comercial/"):
+def list_raw_folders(prefix="balancacomercial/"):
     """Lista as pastas dentro do prefixo especificado no container RAW."""
-    raw_container_url = os.getenv("AZURE_TARGET_STORAGE_RAW_URL")
+    raw_container_url = config.get_target_url("raw")
     if not raw_container_url:
         raise ValueError("URL do container RAW não encontrada.")
     
+    # ContainerClient precisa da URL completa com SAS
     container_client = ContainerClient.from_container_url(raw_container_url)
     blobs = container_client.list_blobs(name_starts_with=prefix)
     
@@ -166,7 +174,7 @@ def process_balanca_comercial():
     # 1. Identificar pastas para processar
     try:
         folders = list_raw_folders()
-        print(f"📂 Pastas encontradas em 'balanco_comercial/': {folders}")
+        print(f"📂 Pastas encontradas em 'balancacomercial/': {folders}")
     except Exception as e:
         print(f"❌ Erro ao listar pastas: {e}")
         return
@@ -179,8 +187,19 @@ def process_balanca_comercial():
     spark = get_spark_session()
     configure_azure_access(spark)
     
-    base_url_raw = "wasbs://raw@grupo4storage.blob.core.windows.net/balanco_comercial"
-    base_url_trusted = "wasbs://trusted@grupo4storage.blob.core.windows.net/balanco_comercial"
+    # Extrai account para montar URL WASBS
+    raw_url = config.get_target_url("raw")
+    trusted_url = config.get_target_url("trusted")
+    
+    # Default fallback
+    account = "grupo4storage"
+    try:
+        if raw_url: account = raw_url.split("https://")[1].split(".")[0]
+    except:
+        pass
+        
+    base_url_raw = f"wasbs://raw@{account}.blob.core.windows.net/balancacomercial"
+    base_url_trusted = f"wasbs://trusted@{account}.blob.core.windows.net/balancacomercial"
 
     # 3. Processar cada pasta individualmente
     for folder_name in folders:

@@ -28,6 +28,7 @@ if os.path.exists(hadoop_home):
         os.environ['PATH'] += os.pathsep + hadoop_bin
     print(f"✅ HADOOP_HOME configurado: {hadoop_home}")
 
+import utils.config as config
 from utils.transformations import BaseTransform, normalize_column_name
 
 def get_spark_session():
@@ -54,38 +55,42 @@ def get_spark_session():
     return spark
 
 def configure_azure_access(spark):
-    """Configura o acesso ao Azure Blob Storage usando SAS Tokens do .env."""
+    """Configura o acesso ao Azure Blob Storage usando SAS Tokens do config.py."""
     
-    # Mapeamento de containers para chaves no .env
-    configs = [
-        ("grupo4storage", "raw", "AZURE_TARGET_STORAGE_RAW_URL"),
-        ("grupo4storage", "trusted", "AZURE_TARGET_STORAGE_TRUSTED_URL")
-    ]
+    # Lista de layers para configurar
+    layers = ["raw", "trusted"]
     
-    for account, container, env_var in configs:
-        url = os.getenv(env_var)
+    for layer in layers:
+        url = config.get_target_url(layer)
         if not url:
-            print(f"⚠️ Aviso: Variável {env_var} não encontrada.")
+            print(f"⚠️ Aviso: URL para camada {layer} não encontrada no config.")
             continue
             
         # Extrai o SAS Token da URL (tudo depois do ?)
+        sas_token = ""
+        account = "grupo4storage" # Default
+        
         if "?" in url:
             sas_token = url.split("?")[1]
-        else:
-            sas_token = "" 
+            
+        # Tenta extrair account da URL
+        try:
+            account = url.split("https://")[1].split(".")[0]
+        except:
+            pass
             
         if sas_token:
-            spark.conf.set(f"fs.azure.sas.{container}.{account}.blob.core.windows.net", sas_token)
+            spark.conf.set(f"fs.azure.sas.{layer}.{account}.blob.core.windows.net", sas_token)
             # ABFSS
             spark.conf.set(f"fs.azure.account.auth.type.{account}.dfs.core.windows.net", "SAS")
             spark.conf.set(f"fs.azure.sas.token.provider.type.{account}.dfs.core.windows.net", "org.apache.hadoop.fs.azurebfs.sas.FixedSASTokenProvider")
             spark.conf.set(f"fs.azure.sas.fixed.token.{account}.dfs.core.windows.net", sas_token)
             
-            print(f"✅ Configurado acesso SAS para {account}/{container}")
+            print(f"✅ Configurado acesso SAS para {account}/{layer}")
 
 def list_raw_folders_cnpj():
     """Lista as pastas CNPJ na raiz do container RAW."""
-    raw_container_url = os.getenv("AZURE_TARGET_STORAGE_RAW_URL")
+    raw_container_url = config.get_target_url("raw")
     if not raw_container_url:
         raise ValueError("URL do container RAW não encontrada.")
     
@@ -187,18 +192,20 @@ def process_cnpj():
     spark = get_spark_session()
     configure_azure_access(spark)
     
-    base_url_raw = "wasbs://raw@grupo4storage.blob.core.windows.net"
-    base_url_trusted = "wasbs://trusted@grupo4storage.blob.core.windows.net/cnpj" # Agrupa em subpasta cnpj na trusted? Ou raiz?
-    # O user pediu "subir tanto balança quanto cnpj na trusted".
-    # Balança vai para trusted/balanco_comercial/...
-    # CNPJ pode ir para trusted/cnpj/... ou trusted/empresas...
-    # Para organizar melhor, vou colocar em trusted/cnpj/{entidade}
-    # Mas vou seguir o padrão do raw se possível. No raw parece ser raw/empresas.
-    # Vou salvar em trusted/empresas para manter consistência com raw, ou trusted/cnpj/empresas?
-    # Balança: raw/balanco_comercial/{folder} -> trusted/balanco_comercial/{folder}
-    # CNPJ: raw/{folder} -> trusted/{folder} (se raw for raiz)
-    # Vou assumir trusted/{folder} para ficar igual ao raw.
-    base_url_trusted = "wasbs://trusted@grupo4storage.blob.core.windows.net"
+    # Extrai account para montar URL WASBS
+    raw_url = config.get_target_url("raw")
+    trusted_url = config.get_target_url("trusted")
+    
+    # Default fallback
+    account = "grupo4storage"
+    try:
+        if raw_url: account = raw_url.split("https://")[1].split(".")[0]
+    except:
+        pass
+    
+    base_url_raw = f"wasbs://raw@{account}.blob.core.windows.net"
+    # Salva em trusted/ folder (igual raw)
+    base_url_trusted = f"wasbs://trusted@{account}.blob.core.windows.net"
 
     # 3. Processar cada pasta individualmente
     for folder_name in folders:
