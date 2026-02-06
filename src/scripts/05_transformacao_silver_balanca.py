@@ -307,8 +307,8 @@ def process_balanca_comercial():
             
             # --- Escrita ---
             
-            if trusted_url:
-                delete_virtual_directory(trusted_url, folder_name)
+            # if trusted_url:
+            #     delete_virtual_directory(trusted_url, folder_name)
 
             logger.info(f"  💾 Salvando em: {target_path}")
             
@@ -333,6 +333,7 @@ def process_balanca_comercial():
             # Configuração para escrita em Delta
             logger.info("  💾 Salvando em formato Delta...")
             writer = df_clean.write.format("delta") \
+                .mode("overwrite") \
                 .option("overwriteSchema", "true")
             
             if partition_cols:
