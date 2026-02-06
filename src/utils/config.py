@@ -2,10 +2,21 @@ import os
 from dotenv import load_dotenv
 
 # --- Carregamento de Variáveis de Ambiente ---
-# Tenta localizar o .env na raiz do projeto
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# src/utils -> src -> raiz
-project_root = os.path.dirname(os.path.dirname(current_dir))
+# Configuração robusta de caminhos (Híbrido Local/Databricks)
+try:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    base_dir = os.getcwd()
+
+# Navega para cima até encontrar a pasta 'src' para definir o project_root
+project_root = base_dir
+while not os.path.exists(os.path.join(project_root, 'src')) and project_root != os.path.dirname(project_root):
+    project_root = os.path.dirname(project_root)
+
+# Fallback: se não achou src, usa o base_dir
+if not os.path.exists(os.path.join(project_root, 'src')):
+    project_root = base_dir
+
 env_path = os.path.join(project_root, '.env')
 
 print(f"🔄 [Config] Tentando carregar .env de: {env_path}")
