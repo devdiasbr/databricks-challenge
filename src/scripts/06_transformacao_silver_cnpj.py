@@ -140,6 +140,7 @@ def delete_virtual_directory(container_url, folder_name):
         # Para CNPJ, as pastas ficam na raiz do container trusted
         prefix = f"{folder_name}/"
         
+        logger.info(f"  🔍 Buscando arquivos para deletar com prefixo: {prefix} no container {container_client.container_name}")
         blobs = container_client.list_blobs(name_starts_with=prefix)
         batch = []
         count = 0
@@ -293,7 +294,7 @@ def process_cnpj():
                 .option("header", "true") \
                 .option("sep", ";") \
                 .option("encoding", "ISO-8859-1") \
-                .mode("overwrite")
+                .mode("append")
                 
             writer.save(target_path)
             logger.info(f"  ✅ Pasta {folder_name} concluída!")

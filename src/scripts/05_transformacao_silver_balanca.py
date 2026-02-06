@@ -136,8 +136,9 @@ def delete_virtual_directory(container_url, folder_name):
         container_client = ContainerClient.from_container_url(container_url)
         # O prefixo deve incluir o caminho base dentro do container
         # No caso da balança: balancacomercial/{folder_name}
-        prefix = f"balancacomercial/{folder_name}"
+        prefix = f"balancacomercial/{folder_name}/" # Adicionado / no final para garantir folder
         
+        logger.info(f"  🔍 Buscando arquivos para deletar com prefixo: {prefix} no container {container_client.container_name}")
         blobs = container_client.list_blobs(name_starts_with=prefix)
         batch = []
         count = 0
@@ -317,7 +318,7 @@ def process_balanca_comercial():
                 .option("header", "true") \
                 .option("sep", ";") \
                 .option("encoding", "ISO-8859-1") \
-                .mode("overwrite")
+                .mode("append")
             
             if partition_cols:
                 logger.info(f"    Particionando por: {partition_cols}")

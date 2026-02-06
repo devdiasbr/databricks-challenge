@@ -9,16 +9,18 @@ from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 import pyspark.sql.functions as F
 from pyspark.sql import SparkSession, DataFrame
+from azure.storage.blob import ContainerClient
 
 # Add project root to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-if project_root not in sys.path:
-    sys.path.append(project_root)
+# src/scripts -> src
+src_dir = os.path.dirname(current_dir)
+if src_dir not in sys.path:
+    sys.path.append(src_dir)
 
 # Import TqdmLoggingHandler
 try:
-    from src.utils.logging_utils import TqdmLoggingHandler
+    from utils.logging_utils import TqdmLoggingHandler
 except ImportError:
     from tqdm import tqdm
     class TqdmLoggingHandler(logging.Handler):
@@ -113,7 +115,7 @@ except ImportError:
     dbutils = DBUtilsMock()
 
 # Configuration
-from src.utils import config
+from utils import config
 
 # Source Config (Account Key) - Mantendo hardcoded se não estiver no config, mas o user disse que está no .env/config
 # O config.py não exporta a Key da Landing, apenas o SAS do Balança/CNPJ.
@@ -286,93 +288,76 @@ def setup_logging(pipeline_run_id: str):
     return logger, blob_handler
 
 # Extraction Logic
-def setup_directories(logger):
+def download_and_extract_data(logger):
+    """
+    Downloads zip files from Azure Blob Storage and extracts them.
+    Replaces dbutils extraction logic for local execution using Azure SDK.
+    """
+    import zipfile
+    import fnmatch
+
     try:
+        # Construct Container URL
+        if SOURCE_SAS:
+            container_url = f"https://{SOURCE_ACCOUNT}.blob.core.windows.net/{SOURCE_CONTAINER}?{SOURCE_SAS}"
+        else:
+            logger.error("Source SAS token missing. Cannot download data.")
+            return
+
+        container_client = ContainerClient.from_container_url(container_url)
+        
+        # Ensure directories exist
         os.makedirs(TMP_EXTRACT_DIR, exist_ok=True)
-        if hasattr(dbutils.fs, 'mkdirs'):
-            dbutils.fs.mkdirs(DBFS_STAGING_DIR)
-        else:
-             os.makedirs(DBFS_STAGING_DIR, exist_ok=True)
+        os.makedirs(DBFS_STAGING_DIR, exist_ok=True)
         logger.info(f"Directories ready: {TMP_EXTRACT_DIR}, {DBFS_STAGING_DIR}")
-    except Exception as e:
-        logger.error(f"Failed to create directories: {str(e)}")
-
-def extract_zip_file(zip_path: str, extract_dir: str, logger) -> bool:
-    try:
-        filename = zip_path.split('/')[-1]
-        local_zip_path = os.path.join(extract_dir, filename)
         
-        # Check if already extracted (optimization)
-        # Note: This is simple check, might not be robust
-        if os.path.exists(local_zip_path):
-             logger.info(f"{filename} already exists locally, skipping download.")
-        else:
-            logger.info(f"Downloading {filename}...")
-            # For Azure ABFSS to Local, dbutils.fs.cp might fail in Mock if not using hadoop-azure properly configured
-            # In real databricks, it works. In local with Mock, we might need a workaround or assume local file.
-            # Here we assume dbutils.fs.cp works (using Hadoop fs)
-            dbutils.fs.cp(zip_path, f"file:{local_zip_path}")
+        # List all blobs
+        logger.info("Listing blobs in source container...")
+        blobs = container_client.list_blobs()
         
-        logger.info(f"Extracting {filename}...")
-        # Use python zipfile instead of os.system for cross-platform
-        import zipfile
-        with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_dir)
+        found_files = 0
+        for blob in blobs:
+            blob_name = blob.name
             
-        logger.info(f"Extracted {filename}")
-        return True
-    except Exception as e:
-        logger.error(f"Error extracting {zip_path}: {str(e)}")
-        return False
-
-def extract_all_zip_files(source_path: str, patterns: List[str], extract_dir: str, logger) -> int:
-    success_count = 0
-    # List files from source
-    # In Mock/Local, this might fail if we don't implement ls for ABFSS.
-    # We will try/except.
-    try:
-        # Assuming we can list files. If not, we might need to rely on hardcoded list if patterns match exactly?
-        # But patterns have wildcards [0-5].
-        # For the purpose of this script, let's assume we can proceed.
-        # If running locally without Azure connection, this will fail.
-        # But user wants code edited, not necessarily executed successfully locally right now.
-        
-        # If we can't list, we iterate patterns and try to download if they were exact filenames.
-        # But they are not.
-        
-        # Let's try to list.
-        # Note: dbutils.fs.ls returns list of FileInfo objects
-        # We'll skip complex ls logic for now and assume the notebook logic works on Databricks.
-        # For local, we might skip extraction if not connected.
-        pass
-    except Exception:
-        pass
-        
-    # Simplified extraction: just iterate patterns and if they are exact, download. 
-    # If they are regex, we can't do much without listing.
-    return 0
-
-def copy_csv_files_to_dbfs(source_dir: str, target_dbfs_dir: str, logger) -> int:
-    try:
-        csv_files = glob.glob(os.path.join(source_dir, "*"))
-        csv_files = [f for f in csv_files if not f.endswith('.zip') and not f.endswith('.txt')]
-        
-        copied_count = 0
-        for csv_file in csv_files:
-            filename = os.path.basename(csv_file)
-            target_path = f"{target_dbfs_dir}/{filename}"
+            # Check against patterns
+            match = False
+            for pattern in ZIP_FILE_PATTERNS:
+                if fnmatch.fnmatch(blob_name, pattern):
+                    match = True
+                    break
             
-            # Copy local to DBFS (or local staging)
-            # In local mode, DBFS_STAGING_DIR is local, so shutil.move/copy
-            import shutil
-            shutil.copy(csv_file, os.path.join(DBFS_STAGING_DIR, filename))
-            copied_count += 1
+            if match:
+                found_files += 1
+                local_zip_path = os.path.join(TMP_EXTRACT_DIR, blob_name)
+                
+                # Download if not exists
+                if not os.path.exists(local_zip_path):
+                    logger.info(f"Downloading {blob_name}...")
+                    try:
+                        with open(local_zip_path, "wb") as f:
+                            download_stream = container_client.download_blob(blob.name)
+                            f.write(download_stream.readall())
+                    except Exception as e:
+                        logger.error(f"Failed to download {blob_name}: {e}")
+                        continue
+                else:
+                    logger.info(f"Skipping download (exists): {blob_name}")
+                
+                # Extract
+                logger.info(f"Extracting {blob_name} to {DBFS_STAGING_DIR}...")
+                try:
+                    with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
+                        zip_ref.extractall(DBFS_STAGING_DIR)
+                except zipfile.BadZipFile:
+                    logger.error(f"Bad zip file: {blob_name}")
+                except Exception as e:
+                    logger.error(f"Error extracting {blob_name}: {e}")
+        
+        if found_files == 0:
+            logger.warning("No matching zip files found in source container.")
             
-        logger.info(f"Copied {copied_count} CSV files to staging")
-        return copied_count
     except Exception as e:
-        logger.error(f"Failed to copy CSV files: {str(e)}")
-        return 0
+        logger.error(f"Error in download/extract: {e}")
 
 # DataFrame Loading
 def load_csv_as_strings(file_pattern: str, entity_name: str, logger: logging.Logger) -> Optional[DataFrame]:
@@ -460,18 +445,8 @@ def run_pipeline():
     logger.info(f"Run ID: {pipeline_run_id}")
     logger.info("="*80)
     
-    setup_directories(logger)
-    
-    # Extraction Step (Commented out by default or skipped if no files? 
-    # Notebook runs it. I will include a placeholder call or actual call logic)
-    # logger.info("Starting Extraction...")
-    # extract_all_zip_files(SOURCE_ABFSS_PATH, ZIP_FILE_PATTERNS, TMP_EXTRACT_DIR, logger)
-    # copy_csv_files_to_dbfs(TMP_EXTRACT_DIR, DBFS_STAGING_DIR, logger)
-    
-    # NOTE: Since extraction is heavy, I am leaving the logic functions available but commented in execution 
-    # or relying on pre-extracted data in DBFS_STAGING_DIR for this script.
-    # However, to be "based on notebook", it should run it.
-    # But for safety in this environment, I will warn if files are missing.
+    # Run Extraction (Download from Azure + Unzip to Staging)
+    download_and_extract_data(logger)
     
     total_files = len(CSV_PATTERNS)
     with tqdm(total=total_files, desc="Processing Entities") as pbar:
