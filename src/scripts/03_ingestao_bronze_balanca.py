@@ -3,22 +3,49 @@ import sys
 import json
 import logging
 import re
+import tqdm
 import pyspark.sql.functions as F
 from pyspark.sql import SparkSession
 from pyspark.sql.utils import AnalysisException
+
+# =============================================================================
+# LOGGING SETUP
+# =============================================================================
+# Tenta importar do utils, assumindo estrutura do projeto
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+sys.path.append(os.path.join(project_root, "src"))
+
+try:
+    from utils.logging_utils import TqdmLoggingHandler
+except ImportError:
+    # Fallback simples se não encontrar
+    class TqdmLoggingHandler(logging.Handler):
+        def emit(self, record):
+            try:
+                msg = self.format(record)
+                tqdm.tqdm.write(msg)
+                self.flush()
+            except Exception:
+                self.handleError(record)
+
+logger = logging.getLogger("IngestaoBronzeBalanca")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = TqdmLoggingHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S'))
+    logger.addHandler(handler)
 
 # =============================================================================
 # WINDOWS HADOOP WORKAROUND
 # =============================================================================
 if os.name == 'nt':
     # Define HADOOP_HOME apontando para a pasta hadoop na raiz do projeto
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(current_dir))
     hadoop_home = os.path.join(project_root, "hadoop")
     
     # Valida se a pasta existe
     if not os.path.exists(hadoop_home):
-        print(f"⚠️ Aviso: Pasta HADOOP_HOME não encontrada em: {hadoop_home}")
+        logger.warning(f"⚠️ Aviso: Pasta HADOOP_HOME não encontrada em: {hadoop_home}")
         import tempfile
         hadoop_home = os.path.join(tempfile.gettempdir(), "hadoop_workaround")
     
@@ -31,14 +58,14 @@ if os.name == 'nt':
     # Verifica winutils.exe
     winutils_path = os.path.join(hadoop_bin, "winutils.exe")
     if not os.path.exists(winutils_path):
-        print(f"⚠️ winutils.exe não encontrado em {winutils_path}. Tentando baixar...")
+        logger.warning(f"⚠️ winutils.exe não encontrado em {winutils_path}. Tentando baixar...")
         import urllib.request
         try:
             url = "https://github.com/cdarlint/winutils/raw/master/hadoop-3.2.2/bin/winutils.exe"
             urllib.request.urlretrieve(url, winutils_path)
-            print("✅ winutils.exe baixado com sucesso.")
+            logger.info("✅ winutils.exe baixado com sucesso.")
         except Exception as e:
-            print(f"❌ Falha ao baixar winutils: {e}")
+            logger.error(f"❌ Falha ao baixar winutils: {e}")
             with open(winutils_path, "w") as f:
                 f.write("Dummy winutils")
 
@@ -46,27 +73,26 @@ if os.name == 'nt':
     if hadoop_bin not in os.environ['PATH']:
         os.environ['PATH'] += os.pathsep + hadoop_bin
         
-    print(f"🔧 Configurado HADOOP_HOME: {hadoop_home}")
+    # logger.info(f"🔧 Configurado HADOOP_HOME: {hadoop_home}")
 
-# Import config (after setting sys.path if needed)
-sys.path.append(os.path.join(project_root, "src"))
 import utils.config as config
 
 # =============================================================================
 # INITIALIZE SPARK SESSION
 # =============================================================================
 def get_spark_session():
-    print("Initializing Spark Session with Delta support...")
+    # logger.info("Initializing Spark Session with Delta support...")
     builder = SparkSession.builder \
         .appName("IngestaoBronzeBalanca") \
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
         .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.0.0,org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6") \
-        .config("spark.driver.extraJavaOptions", "-Divy.message.logger.level=4") \
+        .config("spark.driver.extraJavaOptions", "-Divy.message.logger.level=4 -Dlog4j.rootCategory=ERROR") \
         .master("local[*]")
 
     spark = builder.getOrCreate()
-    spark.sparkContext.setLogLevel("WARN")
+    spark.sparkContext.setLogLevel("ERROR")
+    logging.getLogger("py4j").setLevel(logging.ERROR)
     return spark
 
 spark = get_spark_session()
@@ -127,9 +153,9 @@ schema_path = os.path.join(project_root, 'docs', 'balanca_schema.json')
 try:
     with open(schema_path, 'r', encoding='utf-8') as f:
         full_schema = json.load(f)
-    print(f"✅ Schema carregado.")
+    logger.info(f"✅ Schema carregado.")
 except Exception as e:
-    print(f"❌ Erro ao carregar schema: {e}")
+    logger.error(f"❌ Erro ao carregar schema: {e}")
     full_schema = {}
 
 def get_mapping_for_file(filename):
@@ -168,7 +194,7 @@ def get_mapping_for_file(filename):
 # =============================================================================
 arquivos_para_ignorar = ["NBM.csv", "NBM_NCM.csv"]
 
-print(f"Listando arquivos em: {SOURCE_ABFSS_PATH}")
+logger.info(f"Listando arquivos em: {SOURCE_ABFSS_PATH}")
 
 # Listagem de arquivos via Hadoop API (funciona com SAS configurado acima)
 Path = spark._jvm.org.apache.hadoop.fs.Path
@@ -189,14 +215,14 @@ try:
     fs = Path(SOURCE_ABFSS_PATH).getFileSystem(hadoop_conf)
     status_list = fs.listStatus(Path(SOURCE_ABFSS_PATH))
 except Exception as e:
-    print(f"⚠️ Erro ao listar com ABFSS ({e}). Tentando fallback para WASBS...")
+    logger.warning(f"⚠️ Erro ao listar com ABFSS ({e}). Tentando fallback para WASBS...")
     SOURCE_ABFSS_PATH = f"wasbs://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.blob.core.windows.net"
     # Se falhou no Source com ABFSS, provavelmente falhará no Target também. Muda Target para WASBS.
     TARGET_ABFSS_PATH = f"wasbs://{TARGET_CONTAINER}@{TARGET_ACCOUNT}.blob.core.windows.net"
     
     fs = Path(SOURCE_ABFSS_PATH).getFileSystem(hadoop_conf)
     status_list = fs.listStatus(Path(SOURCE_ABFSS_PATH))
-    print(f"✅ Fallback para WASBS bem sucedido. \nOrigem: {SOURCE_ABFSS_PATH}\nDestino: {TARGET_ABFSS_PATH}")
+    logger.info(f"✅ Fallback para WASBS bem sucedido. \nOrigem: {SOURCE_ABFSS_PATH}\nDestino: {TARGET_ABFSS_PATH}")
 
 arquivos = []
 for status in status_list:
@@ -205,64 +231,73 @@ for status in status_list:
     if status.isFile():
         arquivos.append((path, name))
 
-for full_path, name in arquivos:
-    if name.endswith(".csv") and name not in arquivos_para_ignorar:
-        
-        # Determina nome da pasta destino
-        nome_base = name.replace(".csv", "")
-        # Remove ano para agrupar (ex: EXP_2021 -> exp)
-        nome_limpo = re.sub(r'_\d{4}', '', nome_base) 
-        nome_pasta_assunto = nome_limpo.replace("__", "_").strip("_").lower()
-        nome_pasta_raw = f"balancacomercial/{nome_pasta_assunto}"
-        
-        print(f"Processing: {name} -> {nome_pasta_raw}")
-        
-        # Leitura
-        # Usando latin1 pois dados de governo costumam usar esse encoding
-        try:
-            df_temp = (spark.read 
-                .format("csv") 
-                .option("header", True) 
-                .option("delimiter", ";") 
-                .option("encoding", "ISO-8859-1") 
-                .option("inferSchema", "true")
-                .load(full_path) 
-            )
-            
-            # Aplicar mapeamento de schema se existir
-            mapping = get_mapping_for_file(name)
-            
-            if mapping:
-                print(f"   Mapeando {len(mapping)} colunas pelo schema...")
-                # Seleciona e renomeia apenas colunas presentes no mapping e no DF
-                cols_to_select = []
-                for old_col, new_col in mapping.items():
-                    if old_col in df_temp.columns:
-                        cols_to_select.append(F.col(old_col).alias(new_col))
-                    else:
-                        pass # Coluna do schema não existe no CSV, ignorar ou logar
-                
-                if cols_to_select:
-                    df_temp = df_temp.select(*cols_to_select)
-            else:
-                print("   ⚠️ Schema não encontrado para este arquivo. Apenas normalizando nomes.")
-                # Normalização fallback
-                for col_name in df_temp.columns:
-                    novo_nome = col_name.lower().replace(" ", "_")
-                    df_temp = df_temp.withColumnRenamed(col_name, novo_nome)
+# Filtra arquivos relevantes
+arquivos_filtrados = [
+    (path, name) for path, name in arquivos 
+    if name.endswith(".csv") and name not in arquivos_para_ignorar
+]
 
-            # Escrita Delta
-            path_destino = f"{TARGET_ABFSS_PATH}/{nome_pasta_raw}"
-            
-            (df_temp.write 
-                .format("delta") 
-                .mode("append") 
-                .option("mergeSchema", "true") 
-                .save(path_destino) 
-            )
-            print(f"   ✅ Salvo com sucesso em: {path_destino}")
-            
-        except Exception as e:
-            print(f"   ❌ Erro ao processar {name}: {e}")
+# Loop com TQDM
+pbar = tqdm.tqdm(arquivos_filtrados, desc="Ingestão Bronze")
 
-print("--- Processo de Ingestão Finalizado ---")
+for full_path, name in pbar:
+    pbar.set_description(f"Ingerindo: {name}")
+    
+    # Determina nome da pasta destino
+    nome_base = name.replace(".csv", "")
+    # Remove ano para agrupar (ex: EXP_2021 -> exp)
+    nome_limpo = re.sub(r'_\d{4}', '', nome_base) 
+    nome_pasta_assunto = nome_limpo.replace("__", "_").strip("_").lower()
+    nome_pasta_raw = f"balancacomercial/{nome_pasta_assunto}"
+    
+    # logger.info(f"Processing: {name} -> {nome_pasta_raw}")
+    
+    # Leitura
+    # Usando latin1 pois dados de governo costumam usar esse encoding
+    try:
+        df_temp = (spark.read 
+            .format("csv") 
+            .option("header", True) 
+            .option("delimiter", ";") 
+            .option("encoding", "ISO-8859-1") 
+            .option("inferSchema", "true")
+            .load(full_path) 
+        )
+        
+        # Aplicar mapeamento de schema se existir
+        mapping = get_mapping_for_file(name)
+        
+        if mapping:
+            # logger.info(f"   Mapeando {len(mapping)} colunas pelo schema...")
+            # Seleciona e renomeia apenas colunas presentes no mapping e no DF
+            cols_to_select = []
+            for old_col, new_col in mapping.items():
+                if old_col in df_temp.columns:
+                    cols_to_select.append(F.col(old_col).alias(new_col))
+                else:
+                    pass # Coluna do schema não existe no CSV, ignorar ou logar
+            
+            if cols_to_select:
+                df_temp = df_temp.select(*cols_to_select)
+        else:
+            # logger.warning("   ⚠️ Schema não encontrado para este arquivo. Apenas normalizando nomes.")
+            # Normalização fallback
+            for col_name in df_temp.columns:
+                novo_nome = col_name.lower().replace(" ", "_")
+                df_temp = df_temp.withColumnRenamed(col_name, novo_nome)
+
+        # Escrita Delta
+        path_destino = f"{TARGET_ABFSS_PATH}/{nome_pasta_raw}"
+        
+        (df_temp.write 
+            .format("delta") 
+            .mode("append") 
+            .option("mergeSchema", "true") 
+            .save(path_destino) 
+        )
+        # logger.info(f"   ✅ Salvo com sucesso em: {path_destino}")
+        
+    except Exception as e:
+        logger.error(f"   ❌ Erro ao processar {name}: {e}")
+
+logger.info("--- Processo de Ingestão Finalizado ---")

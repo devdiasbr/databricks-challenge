@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import logging
+import tqdm
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, trim, lower, when, count, lit, upper
 from dotenv import load_dotenv
@@ -26,10 +27,19 @@ if os.path.exists(hadoop_home):
     hadoop_bin = os.path.join(hadoop_home, 'bin')
     if hadoop_bin not in os.environ['PATH']:
         os.environ['PATH'] += os.pathsep + hadoop_bin
-    print(f"✅ HADOOP_HOME configurado: {hadoop_home}")
+    # print(f"✅ HADOOP_HOME configurado: {hadoop_home}")
 
 import utils.config as config
 from utils.transformations import BaseTransform, normalize_column_name
+from utils.logging_utils import TqdmLoggingHandler
+
+# Configura Logger Global
+logger = logging.getLogger("BronzeToSilver_CNPJ")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = TqdmLoggingHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S'))
+    logger.addHandler(handler)
 
 def get_spark_session():
     """Cria e configura a sessão Spark com suporte a Delta e Azure."""
@@ -38,12 +48,16 @@ def get_spark_session():
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
         .config("spark.jars.packages", "org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6,io.delta:delta-spark_2.12:3.0.0") \
-        .config("spark.driver.extraJavaOptions", "-Divy.message.logger.level=4") \
+        .config("spark.driver.extraJavaOptions", "-Divy.message.logger.level=4 -Dlog4j.rootCategory=ERROR") \
         .config("spark.sql.parquet.enableVectorizedReader", "false") \
         .config("spark.sql.parquet.int96RebaseModeInRead", "CORRECTED") \
         .config("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED") \
         .config("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED") \
         .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
+        .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
+        .config("spark.speculation", "false") \
+        .config("spark.hadoop.mapreduce.fileoutputcommitter.cleanup-failures.ignored", "true") \
+        .config("spark.hadoop.fs.azure.enable.check.access", "false") \
         .master("local[*]")
 
     spark = builder.getOrCreate()
@@ -63,7 +77,7 @@ def configure_azure_access(spark):
     for layer in layers:
         url = config.get_target_url(layer)
         if not url:
-            print(f"⚠️ Aviso: URL para camada {layer} não encontrada no config.")
+            logger.warning(f"⚠️ Aviso: URL para camada {layer} não encontrada no config.")
             continue
             
         # Extrai o SAS Token da URL (tudo depois do ?)
@@ -86,7 +100,7 @@ def configure_azure_access(spark):
             spark.conf.set(f"fs.azure.sas.token.provider.type.{account}.dfs.core.windows.net", "org.apache.hadoop.fs.azurebfs.sas.FixedSASTokenProvider")
             spark.conf.set(f"fs.azure.sas.fixed.token.{account}.dfs.core.windows.net", sas_token)
             
-            print(f"✅ Configurado acesso SAS para {account}/{layer}")
+            logger.info(f"✅ Configurado acesso SAS para {account}/{layer}")
 
 def list_raw_folders_cnpj():
     """Lista as pastas CNPJ na raiz do container RAW."""
@@ -113,10 +127,32 @@ def list_raw_folders_cnpj():
             if top_folder in known_cnpj_entities:
                 folders.add(top_folder)
         else:
-            # Caso seja um arquivo na raiz (pouco provavel para delta/parquet, mas possivel)
             pass
     
     return sorted(list(folders))
+
+def delete_virtual_directory(container_url, folder_name):
+    """
+    Remove todos os blobs que começam com o folder_name para simular overwrite de diretório.
+    """
+    try:
+        container_client = ContainerClient.from_container_url(container_url)
+        # Para CNPJ, as pastas ficam na raiz do container trusted
+        prefix = f"{folder_name}/"
+        
+        blobs = container_client.list_blobs(name_starts_with=prefix)
+        batch = []
+        count = 0
+        for blob in blobs:
+            batch.append(blob.name)
+            count += 1
+            container_client.delete_blob(blob.name)
+            
+        if count > 0:
+            logger.info(f"  🗑️ Limpeza prévia: {count} arquivos removidos de {prefix}")
+            
+    except Exception as e:
+        logger.warning(f"  ⚠️ Erro ao tentar limpar diretório {folder_name}: {e}")
 
 def load_schema(schema_path):
     """Carrega o arquivo JSON de schema (tenta UTF-8, fallback para Latin1)."""
@@ -125,12 +161,12 @@ def load_schema(schema_path):
         with open(schema_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except UnicodeDecodeError:
-        print(f"⚠️ Aviso: Falha com UTF-8, tentando Latin1 para {schema_path}")
+        logger.warning(f"⚠️ Aviso: Falha com UTF-8, tentando Latin1 para {schema_path}")
         # Fallback para Latin1 (ISO-8859-1)
         with open(schema_path, 'r', encoding='latin1') as f:
             return json.load(f)
     except Exception as e:
-        print(f"❌ Erro ao carregar schema JSON de {schema_path}: {e}")
+        logger.error(f"❌ Erro ao carregar schema JSON de {schema_path}: {e}")
         return {}
 
 def get_schema_mapping(folder_name, schema):
@@ -141,13 +177,12 @@ def get_schema_mapping(folder_name, schema):
     folder_lower = folder_name.lower()
     
     # Mapa de Folder -> JSON Key
-    # Ajuste conforme ingestion_cnpj.ipynb e docs/cnpj_schema.json
     mapping_keys = {
         "empresas": "EMPRECSV",
         "estabelecimentos": "ESTABELE",
         "socios": "SOCIOCSV",
         "cnaes": "CNAECSV",
-        "municipios": "MUNICIPIOS", # No JSON está MUNICIPIOS
+        "municipios": "MUNICIPIOS", 
         "naturezas": "NATUREZAS",
         "paises": "PAISES",
         "simples": "SIMPLES",
@@ -158,34 +193,33 @@ def get_schema_mapping(folder_name, schema):
     key = mapping_keys.get(folder_lower)
     
     if key and key in schema:
-        print(f"  🔍 Schema selecionado: {key}")
+        logger.info(f"  🔍 Schema selecionado: {key}")
         return schema[key]
     
-    print(f"  ⚠️ Nenhum schema específico encontrado para '{folder_name}'. Usando normalização padrão.")
+    logger.warning(f"  ⚠️ Nenhum schema específico encontrado para '{folder_name}'. Usando normalização padrão.")
     return []
 
 def process_cnpj():
-    print(f"\n🚀 Iniciando processamento Bronze -> Silver (CNPJ)")
+    logger.info(f"\n🚀 Iniciando processamento CNPJ: Bronze -> Silver")
     
     # Carregar Schema
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    # scripts -> src -> Projeto Integrado
     project_root = os.path.dirname(os.path.dirname(current_dir))
     schema_path = os.path.join(project_root, 'docs', 'cnpj_schema.json')
     
-    print(f"📄 Carregando schema de: {schema_path}")
+    logger.info(f"📄 Carregando schema de: {schema_path}")
     full_schema = load_schema(schema_path)
 
     # 1. Identificar pastas para processar
     try:
         folders = list_raw_folders_cnpj()
-        print(f"📂 Pastas CNPJ encontradas em 'raw': {folders}")
+        logger.info(f"📂 Pastas CNPJ encontradas em 'raw': {folders}")
     except Exception as e:
-        print(f"❌ Erro ao listar pastas: {e}")
+        logger.error(f"❌ Erro ao listar pastas: {e}")
         return
 
     if not folders:
-        print("⚠️ Nenhuma pasta CNPJ encontrada para processar.")
+        logger.warning("⚠️ Nenhuma pasta CNPJ encontrada para processar.")
         return
 
     # 2. Inicializar Spark
@@ -204,59 +238,40 @@ def process_cnpj():
         pass
     
     base_url_raw = f"wasbs://raw@{account}.blob.core.windows.net"
-    # Salva em trusted/ folder (igual raw)
     base_url_trusted = f"wasbs://trusted@{account}.blob.core.windows.net"
 
     # 3. Processar cada pasta individualmente
-    for folder_name in folders:
-        print(f"\n🔄 Processando pasta: {folder_name} ...")
+    pbar = tqdm.tqdm(folders, desc="Processando CNPJ")
+    for folder_name in pbar:
+        pbar.set_description(f"Processando: {folder_name}")
         
         source_path = f"{base_url_raw}/{folder_name}"
         target_path = f"{base_url_trusted}/{folder_name}"
         
         try:
-            print(f"  📂 Lendo dados de: {source_path}")
+            logger.info(f"  📂 Lendo dados de: {source_path}")
             
             # Tenta ler como Delta/Parquet
-            # A ingestão salva como Delta.
             try:
                 df = spark.read.format("delta").load(source_path)
             except:
-                print("  ⚠️ Falha ao ler como Delta, tentando Parquet...")
+                logger.warning("  ⚠️ Falha ao ler como Delta, tentando Parquet...")
                 df = spark.read.option("recursiveFileLookup", "true").parquet(source_path)
             
             count_records = df.count()
-            print(f"  📊 Registros encontrados: {count_records}")
+            logger.info(f"  📊 Registros encontrados: {count_records}")
             
             if count_records == 0:
-                print("  ⚠️ Pasta vazia ou sem dados válidos. Pulando.")
+                logger.warning("  ⚠️ Pasta vazia ou sem dados válidos. Pulando.")
                 continue
 
             # --- Transformações ---
             
-            # Selecionar mapping do schema
-            # O schema do CNPJ é uma LISTA de nomes de colunas na ordem.
-            # O DF do Delta já deve ter nomes de colunas, possivelmente genéricos (_c0, _c1) ou já nomeados se a ingestão bronze fez schema evolution.
-            # A ingestão diz "Schema evolution enabled". "Uses expected schema as reference but allows additional columns."
-            # Se a ingestão já nomeou as colunas, ótimo.
-            # Se a ingestão usou "header=false" no CSV e salvou, as colunas podem ser _c0...
-            # Mas `load_csv_with_schema_evolution` usa `expected_schema` (StructType).
-            # Então as colunas no RAW JÁ DEVEM ESTAR NOMEADAS corretamente.
-            # O `get_schema_mapping` aqui retorna uma LISTA de strings do JSON.
-            # Se as colunas já estiverem certas, o rename não fará nada ou confirmará.
-            
             mapping_list = get_schema_mapping(folder_name, full_schema)
 
-            print("  � Aplicando pipeline de transformações (BaseTransform)...")
+            logger.info("  🔧 Aplicando pipeline de transformações (BaseTransform)...")
             
             transformer = BaseTransform(df)
-            
-            # Se tiver schema mapping (lista de nomes), garantimos que as colunas tem esses nomes?
-            # Se o DF já tem nomes corretos, ok. Se tiver _c0, _c1, renomeamos.
-            # Vamos assumir que se o DF tem colunas que não batem com o schema, tentamos renomear posicionalmente APENAS SE parecerem genéricas ou se for a estratégia.
-            # Mas como é Bronze->Silver, e Bronze já aplicou schema, talvez seja redundante.
-            # Mas para garantir, vamos aplicar normalização.
-            
             transformer.normalize_headers()
             
             df_clean = (transformer
@@ -269,8 +284,10 @@ def process_cnpj():
             
             # --- Escrita ---
             
-            # Configuração para escrita em Latin1 (CSV) conforme solicitado
-            print(f"  💾 Salvando em: {target_path} (CSV Latin1)")
+            if trusted_url:
+                delete_virtual_directory(trusted_url, folder_name)
+
+            logger.info(f"  💾 Salvando em: {target_path} (CSV Latin1)")
             
             writer = df_clean.write.format("csv") \
                 .option("header", "true") \
@@ -279,12 +296,12 @@ def process_cnpj():
                 .mode("overwrite")
                 
             writer.save(target_path)
-            print(f"  ✅ Pasta {folder_name} concluída!")
+            logger.info(f"  ✅ Pasta {folder_name} concluída!")
             
         except Exception as e:
-            print(f"  ❌ Erro ao processar pasta {folder_name}: {str(e)}")
+            logger.error(f"  ❌ Erro ao processar pasta {folder_name}: {str(e)}")
 
-    print("\n🏁 Processamento CNPJ finalizado.")
+    logger.info("\n🏁 Processamento CNPJ finalizado.")
     spark.stop()
 
 if __name__ == "__main__":
