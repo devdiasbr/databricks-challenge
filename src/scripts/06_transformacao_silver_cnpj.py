@@ -103,15 +103,16 @@ def configure_azure_access(spark):
             logger.info(f"✅ Configurado acesso SAS para {account}/{layer}")
 
 def list_raw_folders_cnpj():
-    """Lista as pastas CNPJ na raiz do container RAW."""
+    """Lista as pastas CNPJ dentro da pasta 'cnpj' no container RAW."""
     raw_container_url = config.get_target_url("raw")
     if not raw_container_url:
         raise ValueError("URL do container RAW não encontrada.")
     
     container_client = ContainerClient.from_container_url(raw_container_url)
-    blobs = container_client.list_blobs() # Lista tudo na raiz
+    # Lista blobs dentro da pasta 'cnpj/'
+    blobs = container_client.list_blobs(name_starts_with="cnpj/") 
     
-    # Pastas esperadas (whitelist) para evitar processar balanco_comercial
+    # Pastas esperadas (whitelist)
     known_cnpj_entities = [
         "empresas", "estabelecimentos", "socios", "cnaes", 
         "paises", "naturezas", "municipios", "simples", 
@@ -120,14 +121,14 @@ def list_raw_folders_cnpj():
     
     folders = set()
     for blob in blobs:
-        name = blob.name
-        # Se for pasta (tem /) ou arquivo direto (parquet), pega a primeira parte
-        if '/' in name:
-            top_folder = name.split('/')[0]
-            if top_folder in known_cnpj_entities:
-                folders.add(top_folder)
-        else:
-            pass
+        name = blob.name # Ex: cnpj/empresas/part-0000.parquet
+        parts = name.split('/')
+        
+        # Precisa ter pelo menos 2 partes: cnpj/pasta/...
+        if len(parts) > 1:
+            subfolder = parts[1]
+            if subfolder in known_cnpj_entities:
+                folders.add(subfolder)
     
     return sorted(list(folders))
 
@@ -246,7 +247,7 @@ def process_cnpj():
     for folder_name in pbar:
         pbar.set_description(f"Processando: {folder_name}")
         
-        source_path = f"{base_url_raw}/{folder_name}"
+        source_path = f"{base_url_raw}/cnpj/{folder_name}"
         target_path = f"{base_url_trusted}/{folder_name}"
         
         try:
