@@ -1,0 +1,51 @@
+# 3. Execução do Pipeline
+
+O pipeline é composto por scripts numerados sequencialmente em `src/scripts/`.
+
+## 🎮 O Orquestrador (`00_setup.py`)
+A maneira mais fácil de rodar é usando o orquestrador. Ele garante a ordem correta e gerencia dependências.
+
+```bash
+# Executa TUDO (Setup + Bronze + Silver)
+python src/scripts/00_setup.py
+
+# Pular instalação de dependências (se já instalou)
+python src/scripts/00_setup.py --skip-deps
+
+# Rodar apenas a camada Silver
+python src/scripts/00_setup.py --skip-deps --skip-bronze
+```
+
+## 📜 Execução Manual (Passo a Passo)
+
+### 1. Diagnóstico (Opcional)
+Verifique os arquivos disponíveis na origem:
+```bash
+python src/scripts/01_listagem_arquivos_azure.py
+```
+
+### 2. Validação de Setup (Opcional)
+Garanta que os containers de destino existem:
+```bash
+python src/scripts/02_setup_validacao_targets.py
+```
+
+### 3. Camada Bronze (Ingestão)
+Lê da Landing Zone e salva na Raw (Delta/Parquet).
+```bash
+python src/scripts/03_ingestao_bronze_balanca.py
+python src/scripts/04_ingestao_bronze_cnpj.py
+```
+> **Nota CNPJ:** O script do CNPJ faz download e extração de ZIPs em streaming. Pode demorar dependendo da sua internet.
+
+### 4. Camada Silver (Transformação)
+Lê da Raw, limpa e salva na Trusted (Delta).
+```bash
+python src/scripts/05_transformacao_silver_balanca.py
+python src/scripts/06_transformacao_silver_cnpj.py
+```
+
+## 📊 Monitoramento
+*   Os scripts exibem barras de progresso (`tqdm`) no terminal.
+*   Logs detalhados são salvos localmente na pasta `logs/`.
+*   Logs também são enviados para o container `$logs` no Azure Blob Storage.

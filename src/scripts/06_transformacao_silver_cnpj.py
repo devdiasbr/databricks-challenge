@@ -224,7 +224,7 @@ def process_cnpj():
     logger.info(f"\n🚀 Iniciando processamento CNPJ: Bronze -> Silver")
     
     # Carregar Schema usando o project_root global calculado no início do script
-    schema_path = os.path.join(project_root, 'docs', 'cnpj_schema.json')
+    schema_path = os.path.join(project_root, 'docs', 'schemas', 'cnpj_schema.json')
     
     logger.info(f"📄 Carregando schema de: {schema_path}")
     full_schema = load_schema(schema_path)

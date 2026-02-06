@@ -218,7 +218,7 @@ def process_balanca_comercial():
     logger.info(f"\n🚀 Iniciando processamento Balança Comercial: Bronze -> Silver")
     
     # Carregar Schema usando o project_root global calculado no início do script
-    schema_path = os.path.join(project_root, 'docs', 'balanca_schema.json')
+    schema_path = os.path.join(project_root, 'docs', 'schemas', 'balanca_schema.json')
     
     logger.info(f"📄 Carregando schema de: {schema_path}")
     full_schema = load_schema(schema_path)

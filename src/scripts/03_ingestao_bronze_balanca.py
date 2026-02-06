@@ -164,7 +164,7 @@ TARGET_ABFSS_PATH = f"abfss://{TARGET_CONTAINER}@{TARGET_ACCOUNT}.dfs.core.windo
 # =============================================================================
 # CARREGAMENTO DE SCHEMA
 # =============================================================================
-schema_path = os.path.join(project_root, 'docs', 'balanca_schema.json')
+schema_path = os.path.join(project_root, 'docs', 'schemas', 'balanca_schema.json')
 try:
     with open(schema_path, 'r', encoding='utf-8') as f:
         full_schema = json.load(f)

@@ -45,11 +45,23 @@ graph LR
 
 ---
 
+## 📚 Documentação Completa
+
+A documentação detalhada do projeto foi movida para a pasta `docs/manual/`. Consulte os guias abaixo para mais informações:
+
+1.  [Visão Geral](docs/manual/01_visao_geral.md)
+2.  [Configuração do Ambiente](docs/manual/02_configuracao_ambiente.md)
+3.  [Execução do Pipeline](docs/manual/03_execucao_pipeline.md)
+4.  [Arquitetura Detalhada](docs/manual/04_arquitetura_detalhada.md)
+5.  [Guia de Troubleshooting](docs/manual/05_guia_troubleshooting.md)
+
 ## 📂 Estrutura do Projeto
 
 ```text
 /
-├── docs/                       # Documentação técnica e schemas JSON
+├── docs/                       # Documentação
+│   ├── manual/                 # 📘 Manuais e guias do projeto
+│   └── schemas/                # 📋 Schemas JSON (CNPJ, Balança)
 ├── hadoop/                     # Binários do Hadoop (winutils) gerenciados automaticamente
 ├── src/
 │   ├── scripts/                # Scripts do Pipeline
