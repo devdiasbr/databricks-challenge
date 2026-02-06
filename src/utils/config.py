@@ -26,12 +26,36 @@ if not loaded:
     print("⚠️ [Config] .env não encontrado no caminho explícito. Tentando busca padrão...")
     load_dotenv()
 
+# --- Helpers de Configuração ---
+def get_config(key, default=None):
+    """
+    Tenta recuperar configuração de múltiplas fontes:
+    1. Variável de Ambiente (OS)
+    2. Dbutils Secrets (se disponível no Databricks)
+    """
+    # 1. Tenta Env Var
+    val = os.getenv(key)
+    if val: return val
+    
+    # 2. Tenta Dbutils (apenas se estiver no Databricks)
+    try:
+        from pyspark.dbutils import DBUtils
+        from pyspark.sql import SparkSession
+        spark = SparkSession.builder.getOrCreate()
+        dbutils = DBUtils(spark)
+        # Assume um escopo padrão ou tenta buscar de um escopo configurado
+        # Ajuste 'databricks-challenge-secrets' conforme necessário
+        return dbutils.secrets.get(scope="project-secrets", key=key)
+    except Exception:
+        pass
+        
+    return default
+
 # --- Configurações de Storage ---
 
 # 1. ORIGEM (Landing)
-# No .env temos URLs separadas para Balança e CNPJ. Vamos tentar extrair a conta de uma delas.
-BALANCA_URL = os.getenv("BALANCA_ACCOUNT_URL")
-CNPJ_URL = os.getenv("CNPJ_ACCOUNT_URL")
+BALANCA_URL = get_config("BALANCA_ACCOUNT_URL")
+CNPJ_URL = get_config("CNPJ_ACCOUNT_URL")
 
 # Extrai nome da conta (ex: https://landingbeca2026jan.blob...)
 SOURCE_ACCOUNT = "landingbeca2026jan" # Fallback
@@ -41,20 +65,28 @@ elif CNPJ_URL:
     SOURCE_ACCOUNT = CNPJ_URL.split("https://")[1].split(".")[0]
 
 # Tokens específicos de Origem
-SAS_TOKEN_BALANCA = os.getenv("AZURE_STORAGE_SAS_TOKEN_BALANCA")
-SAS_TOKEN_CNPJ = os.getenv("AZURE_STORAGE_SAS_TOKEN_CNPJ")
+SAS_TOKEN_BALANCA = get_config("AZURE_STORAGE_SAS_TOKEN_BALANCA")
+SAS_TOKEN_CNPJ = get_config("AZURE_STORAGE_SAS_TOKEN_CNPJ")
 
 # 2. DESTINO (Lakehouse: Raw, Trusted, Refined)
-# No .env temos URLs completas (com SAS) para cada container
-TARGET_RAW_URL = os.getenv("AZURE_TARGET_STORAGE_RAW_URL")
-TARGET_TRUSTED_URL = os.getenv("AZURE_TARGET_STORAGE_TRUSTED_URL")
-TARGET_REFINED_URL = os.getenv("AZURE_TARGET_STORAGE_REFINED_URL")
+TARGET_RAW_URL = get_config("AZURE_TARGET_STORAGE_RAW_URL")
+TARGET_TRUSTED_URL = get_config("AZURE_TARGET_STORAGE_TRUSTED_URL")
+TARGET_REFINED_URL = get_config("AZURE_TARGET_STORAGE_REFINED_URL")
 
 # Debug de Credenciais (Seguro)
 print(f"ℹ️ [Config] SOURCE Account: {SOURCE_ACCOUNT}")
 print(f"ℹ️ [Config] TARGET RAW URL encontrada? {'✅' if TARGET_RAW_URL else '❌'}")
 print(f"ℹ️ [Config] TARGET TRUSTED URL encontrada? {'✅' if TARGET_TRUSTED_URL else '❌'}")
 print(f"ℹ️ [Config] TARGET REFINED URL encontrada? {'✅' if TARGET_REFINED_URL else '❌'}")
+
+if not TARGET_RAW_URL:
+    print("\n🛑 [ERRO CRÍTICO] Variáveis de ambiente não encontradas!")
+    print("   O arquivo .env NÃO é sincronizado com o Git por segurança.")
+    print("   No Databricks, você deve:")
+    print("   1. Criar o arquivo .env manualmente na raiz do Repo (Upload ou Editor).")
+    print("   2. OU configurar as variáveis de ambiente no Cluster (Compute > Config > Environment Variables).")
+    print("   3. OU configurar Secrets (scope='project-secrets').")
+    print(f"   Caminho esperado do .env: {env_path}\n")
 
 # Definição da Estrutura de Containers e Pastas
 STRUCTURE = {
