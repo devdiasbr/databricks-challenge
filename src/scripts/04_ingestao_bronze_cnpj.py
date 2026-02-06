@@ -12,9 +12,22 @@ from pyspark.sql import SparkSession, DataFrame
 from azure.storage.blob import ContainerClient
 
 # Add project root to sys.path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# src/scripts -> src
-src_dir = os.path.dirname(current_dir)
+# Configuração robusta de caminhos (Híbrido Local/Databricks)
+try:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    base_dir = os.getcwd()
+
+# Navega para cima até encontrar a pasta 'src' para definir o project_root
+project_root = base_dir
+while not os.path.exists(os.path.join(project_root, 'src')) and project_root != os.path.dirname(project_root):
+    project_root = os.path.dirname(project_root)
+
+# Fallback: se não achou src, usa o base_dir (assume execução na raiz ou flat)
+if not os.path.exists(os.path.join(project_root, 'src')):
+    project_root = base_dir
+
+src_dir = os.path.join(project_root, "src")
 if src_dir not in sys.path:
     sys.path.append(src_dir)
 
