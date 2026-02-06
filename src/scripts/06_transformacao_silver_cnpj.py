@@ -12,15 +12,20 @@ from azure.storage.blob import ContainerClient
 # Carrega variáveis de ambiente
 load_dotenv()
 
-# Configuração do HADOOP_HOME para execução local no Windows
+# Configuração robusta de caminhos (Híbrido Local/Databricks)
 try:
-    current_file = os.path.abspath(__file__)
-    current_dir = os.path.dirname(current_file)
-    project_root = os.path.dirname(os.path.dirname(current_dir))
+    base_dir = os.path.dirname(os.path.abspath(__file__))
 except NameError:
-    # Compatibilidade com Databricks
-    current_dir = os.getcwd()
-    project_root = os.getcwd()
+    base_dir = os.getcwd()
+
+# Navega para cima até encontrar a pasta 'src' para definir o project_root
+project_root = base_dir
+while not os.path.exists(os.path.join(project_root, 'src')) and project_root != os.path.dirname(project_root):
+    project_root = os.path.dirname(project_root)
+
+# Fallback: se não achou src, usa o base_dir (assume execução na raiz ou flat)
+if not os.path.exists(os.path.join(project_root, 'src')):
+    project_root = base_dir
 
 # Adiciona src ao path para importar utils
 src_path = os.path.join(project_root, 'src')
