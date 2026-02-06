@@ -101,16 +101,10 @@ def configure_azure_access(spark):
             
         # Extrai o SAS Token da URL (tudo depois do ?)
         sas_token = ""
-        account = "grupo4storage" # Default
+        account = config.TARGET_ACCOUNT
         
         if "?" in url:
             sas_token = url.split("?")[1]
-            
-        # Tenta extrair account da URL
-        try:
-            account = url.split("https://")[1].split(".")[0]
-        except:
-            pass
             
         if sas_token:
             spark.conf.set(f"fs.azure.sas.{layer}.{account}.blob.core.windows.net", sas_token)
@@ -246,15 +240,7 @@ def process_cnpj():
     configure_azure_access(spark)
     
     # Extrai account para montar URL WASBS
-    raw_url = config.get_target_url("raw")
-    trusted_url = config.get_target_url("trusted")
-    
-    # Default fallback
-    account = "grupo4storage"
-    try:
-        if raw_url: account = raw_url.split("https://")[1].split(".")[0]
-    except:
-        pass
+    account = config.TARGET_ACCOUNT
     
     base_url_raw = f"wasbs://raw@{account}.blob.core.windows.net"
     base_url_trusted = f"wasbs://trusted@{account}.blob.core.windows.net"

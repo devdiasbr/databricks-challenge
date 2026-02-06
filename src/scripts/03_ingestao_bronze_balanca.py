@@ -4,10 +4,10 @@ import json
 import logging
 import re
 import tqdm
+import shutil
+import tempfile
 import pyspark.sql.functions as F
 from pyspark.sql import SparkSession
-from pyspark.sql.utils import AnalysisException
-
 # =============================================================================
 # LOGGING SETUP
 # =============================================================================
@@ -60,7 +60,7 @@ if os.name == 'nt':
     
     # Valida se a pasta existe
     if not os.path.exists(hadoop_home):
-        logger.warning(f"⚠️ Aviso: Pasta HADOOP_HOME não encontrada em: {hadoop_home}")
+        logger.warning(f"Aviso: Pasta HADOOP_HOME não encontrada em: {hadoop_home}")
         import tempfile
         hadoop_home = os.path.join(tempfile.gettempdir(), "hadoop_workaround")
     
@@ -73,14 +73,14 @@ if os.name == 'nt':
     # Verifica winutils.exe
     winutils_path = os.path.join(hadoop_bin, "winutils.exe")
     if not os.path.exists(winutils_path):
-        logger.warning(f"⚠️ winutils.exe não encontrado em {winutils_path}. Tentando baixar...")
+        logger.warning(f"winutils.exe não encontrado em {winutils_path}. Tentando baixar...")
         import urllib.request
         try:
             url = "https://github.com/cdarlint/winutils/raw/master/hadoop-3.2.2/bin/winutils.exe"
             urllib.request.urlretrieve(url, winutils_path)
-            logger.info("✅ winutils.exe baixado com sucesso.")
+            logger.info("winutils.exe baixado com sucesso.")
         except Exception as e:
-            logger.error(f"❌ Falha ao baixar winutils: {e}")
+            logger.error(f"Falha ao baixar winutils: {e}")
             with open(winutils_path, "w") as f:
                 f.write("Dummy winutils")
 
@@ -91,6 +91,7 @@ if os.name == 'nt':
     # logger.info(f"🔧 Configurado HADOOP_HOME: {hadoop_home}")
 
 import utils.config as config
+from utils.file_validator import SmartFileLoader
 
 # =============================================================================
 # INITIALIZE SPARK SESSION
@@ -103,6 +104,9 @@ def get_spark_session():
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
         .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.0.0,org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6") \
         .config("spark.driver.extraJavaOptions", "-Divy.message.logger.level=4 -Dlog4j.rootCategory=ERROR") \
+        .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
+        .config("spark.speculation", "false") \
+        .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
         .master("local[*]")
 
     spark = builder.getOrCreate()
@@ -128,17 +132,11 @@ TARGET_RAW_URL = config.TARGET_RAW_URL
 
 # Extrai SAS e Account do Target URL se necessário
 TARGET_SAS = ""
-TARGET_ACCOUNT = "grupo4storage" # Default
+TARGET_ACCOUNT = config.TARGET_ACCOUNT
 
 if TARGET_RAW_URL:
     if "?" in TARGET_RAW_URL:
         TARGET_SAS = TARGET_RAW_URL.split("?")[1]
-    
-    # Tenta extrair account da URL
-    try:
-        TARGET_ACCOUNT = TARGET_RAW_URL.split("https://")[1].split(".")[0]
-    except:
-        pass
 
 # Configura credenciais
 if SOURCE_SAS:
@@ -151,15 +149,20 @@ if SOURCE_SAS:
     spark.conf.set(f"fs.azure.sas.fixed.token.{SOURCE_ACCOUNT}.dfs.core.windows.net", SOURCE_SAS)
 
 if TARGET_SAS:
-    spark.conf.set(f"fs.azure.sas.{TARGET_CONTAINER}.{TARGET_ACCOUNT}.dfs.core.windows.net", TARGET_SAS)
+    # Use WASBS for stability with SAS on Local/Windows
     spark.conf.set(f"fs.azure.sas.{TARGET_CONTAINER}.{TARGET_ACCOUNT}.blob.core.windows.net", TARGET_SAS)
+    TARGET_ABFSS_PATH = f"wasbs://{TARGET_CONTAINER}@{TARGET_ACCOUNT}.blob.core.windows.net"
     
+    # Configuração legado (ABFSS) mantida apenas se necessário, mas path aponta para WASBS
     spark.conf.set(f"fs.azure.account.auth.type.{TARGET_ACCOUNT}.dfs.core.windows.net", "SAS")
     spark.conf.set(f"fs.azure.sas.token.provider.type.{TARGET_ACCOUNT}.dfs.core.windows.net", "org.apache.hadoop.fs.azurebfs.sas.FixedSASTokenProvider")
     spark.conf.set(f"fs.azure.sas.fixed.token.{TARGET_ACCOUNT}.dfs.core.windows.net", TARGET_SAS)
+    
+else:
+    # Se não tem SAS (Account Key?), usa ABFSS
+    TARGET_ABFSS_PATH = f"abfss://{TARGET_CONTAINER}@{TARGET_ACCOUNT}.dfs.core.windows.net"
 
 SOURCE_ABFSS_PATH = f"abfss://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.dfs.core.windows.net"
-TARGET_ABFSS_PATH = f"abfss://{TARGET_CONTAINER}@{TARGET_ACCOUNT}.dfs.core.windows.net"
 
 # =============================================================================
 # CARREGAMENTO DE SCHEMA
@@ -168,9 +171,9 @@ schema_path = os.path.join(project_root, 'docs', 'schemas', 'balanca_schema.json
 try:
     with open(schema_path, 'r', encoding='utf-8') as f:
         full_schema = json.load(f)
-    logger.info(f"✅ Schema carregado.")
+    logger.info(f"Schema carregado.")
 except Exception as e:
-    logger.error(f"❌ Erro ao carregar schema: {e}")
+    logger.error(f"Erro ao carregar schema: {e}")
     full_schema = {}
 
 def get_mapping_for_file(filename):
@@ -178,7 +181,7 @@ def get_mapping_for_file(filename):
     Retorna o dicionário de mapeamento (col_origem -> col_destino) para o arquivo.
     Suporta correspondência exata, por prefixo e insensível ao ano (ex: IMP_2022_MUN -> IMP_2021_MUN).
     """
-    name_no_ext = filename.replace(".csv", "")
+    name_no_ext = os.path.splitext(filename)[0]
     
     # 1. Match exato
     if name_no_ext in full_schema:
@@ -207,7 +210,7 @@ def get_mapping_for_file(filename):
 # =============================================================================
 # LÓGICA DE INGESTÃO
 # =============================================================================
-arquivos_para_ignorar = ["NBM.csv", "NBM_NCM.csv"]
+arquivos_para_ignorar = [] #["NBM.csv", "NBM_NCM.csv"]
 
 logger.info(f"Listando arquivos em: {SOURCE_ABFSS_PATH}")
 
@@ -230,14 +233,14 @@ try:
     fs = Path(SOURCE_ABFSS_PATH).getFileSystem(hadoop_conf)
     status_list = fs.listStatus(Path(SOURCE_ABFSS_PATH))
 except Exception as e:
-    logger.warning(f"⚠️ Erro ao listar com ABFSS ({e}). Tentando fallback para WASBS...")
+    logger.warning(f"Erro ao listar com ABFSS ({e}). Tentando fallback para WASBS...")
     SOURCE_ABFSS_PATH = f"wasbs://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.blob.core.windows.net"
     # Se falhou no Source com ABFSS, provavelmente falhará no Target também. Muda Target para WASBS.
     TARGET_ABFSS_PATH = f"wasbs://{TARGET_CONTAINER}@{TARGET_ACCOUNT}.blob.core.windows.net"
     
     fs = Path(SOURCE_ABFSS_PATH).getFileSystem(hadoop_conf)
     status_list = fs.listStatus(Path(SOURCE_ABFSS_PATH))
-    logger.info(f"✅ Fallback para WASBS bem sucedido. \nOrigem: {SOURCE_ABFSS_PATH}\nDestino: {TARGET_ABFSS_PATH}")
+    logger.info(f"Fallback para WASBS bem sucedido. \nOrigem: {SOURCE_ABFSS_PATH}\nDestino: {TARGET_ABFSS_PATH}")
 
 arquivos = []
 for status in status_list:
@@ -246,41 +249,73 @@ for status in status_list:
     if status.isFile():
         arquivos.append((path, name))
 
-# Filtra arquivos relevantes
-arquivos_filtrados = [
-    (path, name) for path, name in arquivos 
-    if name.endswith(".csv") and name not in arquivos_para_ignorar
-]
+# Filtra arquivos relevantes com validação e logging
+arquivos_filtrados = []
+logger.info(f"Iniciando validação de {len(arquivos)} arquivos encontrados...")
+
+for path, name in arquivos:
+    # 1. Verifica lista de ignorados explícita
+    if name in arquivos_para_ignorar:
+        logger.info(f"   [IGNORADO] Arquivo na lista de exclusão: {name}")
+        continue
+        
+    # 2. Valida extensão suportada
+    _, ext = os.path.splitext(name)
+    if ext.lower() not in SmartFileLoader.SUPPORTED_EXTENSIONS:
+        logger.warning(f"   [IGNORADO] Extensão não suportada ({ext}): {name}")
+        continue
+        
+    # Se passou, adiciona para processamento
+    arquivos_filtrados.append((path, name))
+
+logger.info(f"Arquivos válidos para ingestão: {len(arquivos_filtrados)}")
 
 # Loop com TQDM
+TEMP_DIR = os.path.join(tempfile.gettempdir(), "balanca_ingestion")
+os.makedirs(TEMP_DIR, exist_ok=True)
+
 pbar = tqdm.tqdm(arquivos_filtrados, desc="Ingestão Bronze")
 
 for full_path, name in pbar:
     pbar.set_description(f"Ingerindo: {name}")
     
-    # Determina nome da pasta destino
-    nome_base = name.replace(".csv", "")
-    # Remove ano para agrupar (ex: EXP_2021 -> exp)
-    nome_limpo = re.sub(r'_\d{4}', '', nome_base) 
-    nome_pasta_assunto = nome_limpo.replace("__", "_").strip("_").lower()
-    nome_pasta_raw = f"balancacomercial/{nome_pasta_assunto}"
+    # Cria diretório de staging para este arquivo
+    file_temp_dir = os.path.join(TEMP_DIR, f"staging_{name}")
+    os.makedirs(file_temp_dir, exist_ok=True)
+    local_path = os.path.join(file_temp_dir, name)
     
-    # logger.info(f"Processing: {name} -> {nome_pasta_raw}")
-    
-    # Leitura
-    # Usando latin1 pois dados de governo costumam usar esse encoding
     try:
-        df_temp = (spark.read 
-            .format("csv") 
-            .option("header", True) 
-            .option("delimiter", ";") 
-            .option("encoding", "ISO-8859-1") 
-            .option("inferSchema", "false")
-            .load(full_path) 
-        )
+        # 1. Download do arquivo (Azure -> Local) para inspeção e leitura
+        # copyToLocalFile(delSrc, src, dst, useRawLocalFileSystem)
+        fs.copyToLocalFile(False, Path(full_path), Path(local_path), True)
+        
+        # 2. Inspeção Inteligente (SmartFileLoader)
+        loader = SmartFileLoader(temp_dir=file_temp_dir)
+        file_info = loader.inspect_and_prepare(local_path)
+
+        if file_info.get('format') == 'unknown':
+            logger.error(f"   ❌ Erro de validação: Formato ou conteúdo não suportado para {name}")
+            continue
+
+        # Determina nome da pasta destino usando o arquivo efetivamente processado (ex: extraído do ZIP)
+        effective_filename = os.path.basename(file_info['path'])
+        
+        nome_base = os.path.splitext(effective_filename)[0]
+        # Remove ano para agrupar (ex: EXP_2021 -> exp)
+        nome_limpo = re.sub(r'_\d{4}', '', nome_base) 
+        nome_pasta_assunto = nome_limpo.replace("__", "_").strip("_").lower()
+        nome_pasta_raw = f"balancacomercial/{nome_pasta_assunto}"
+        
+        # Ajuste de Encoding (Dados de governo BR costumam ser Latin1)
+        # SmartFileLoader detecta delimitador, mas assumimos Latin1 para Balança
+        if file_info.get('format') == 'csv':
+            file_info['options']['encoding'] = 'ISO-8859-1'
+
+        # 3. Leitura com Spark (Lê do disco local processado/extraído)
+        df_temp = spark.read.format(file_info['format']).options(**file_info['options']).load(file_info['path'])
         
         # Aplicar mapeamento de schema se existir
-        mapping = get_mapping_for_file(name)
+        mapping = get_mapping_for_file(effective_filename)
         
         if mapping:
             # logger.info(f"   Mapeando {len(mapping)} colunas pelo schema...")
@@ -310,9 +345,12 @@ for full_path, name in pbar:
             .option("mergeSchema", "true") 
             .save(path_destino) 
         )
-        # logger.info(f"   ✅ Salvo com sucesso em: {path_destino}")
+        logger.info(f"   Salvo com sucesso em: {path_destino}")
         
     except Exception as e:
-        logger.error(f"   ❌ Erro ao processar {name}: {e}")
+        logger.error(f"   Erro ao processar {name}: {e}")
+    finally:
+        # Limpeza do staging
+        shutil.rmtree(file_temp_dir, ignore_errors=True)
 
 logger.info("--- Processo de Ingestão Finalizado ---")

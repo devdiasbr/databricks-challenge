@@ -19,7 +19,12 @@ class SmartFileLoader:
     - Validação de extensões.
     """
     
-    SUPPORTED_EXTENSIONS = {'.csv', '.txt', '.parquet', '.json', '.xlsx', '.zip'}
+    SUPPORTED_EXTENSIONS = {
+        '.csv', '.txt', '.parquet', '.json', '.xlsx', '.zip',
+        # Extensões RFB (CNPJ)
+        '.emprecsv', '.estabele', '.sociocsv', '.simples', '.cnaecsv', 
+        '.motivos', '.municipios', '.naturezas', '.paises', '.qualificacoes'
+    }
     
     def __init__(self, temp_dir: Optional[str] = None):
         """
@@ -44,14 +49,29 @@ class SmartFileLoader:
         
         # 1. Tratamento de Arquivos Compactados (ZIP)
         if ext == '.zip':
-            logger.info(f"📦 Arquivo ZIP detectado: {file_path}")
+            logger.info(f"Arquivo ZIP detectado: {file_path}")
             extracted_files = self._extract_zip(file_path)
             if not extracted_files:
                 raise ValueError(f"O arquivo ZIP {file_path} está vazio ou corrompido.")
             
             # Por simplicidade, assume ingestão do primeiro arquivo relevante encontrado
-            # Em um cenário real, poderia retornar uma lista de arquivos a processar
-            target_file = extracted_files[0]
+            # Melhoria: Busca o arquivo mais provável (maior tamanho ou extensão suportada)
+            target_file = None
+            
+            # 1. Tenta encontrar arquivo com extensão suportada
+            for fpath in extracted_files:
+                _, fext = os.path.splitext(fpath)
+                if fext.lower() in self.SUPPORTED_EXTENSIONS:
+                    target_file = fpath
+                    break
+            
+            # 2. Se não achou, tenta pegar o maior arquivo (ignora metadados pequenos)
+            if not target_file and extracted_files:
+                target_file = max(extracted_files, key=os.path.getsize)
+                
+            if not target_file:
+                 raise ValueError(f"Nenhum arquivo válido encontrado dentro do ZIP {file_path}")
+
             logger.info(f"   -> Processando conteúdo extraído: {target_file}")
             
             # Recursão para analisar o arquivo extraído
@@ -60,8 +80,25 @@ class SmartFileLoader:
             return result
 
         # 2. Tratamento por Formato
-        if ext in ['.csv', '.txt']:
-            return self._analyze_text_file(file_path)
+        # Lista de extensões da Receita Federal (CNPJ) que são essencialmente CSVs
+        rfb_extensions = ['.emprecsv', '.estabele', '.sociocsv', '.simples', '.cnaecsv', 
+                          '.motivos', '.municipios', '.naturezas', '.paises', '.qualificacoes']
+
+        # Verifica se é suportado (extensão exata ou se contém 'csv' no final, conforme dica do usuário)
+        is_rfb_or_csv_variant = (ext in rfb_extensions) or ('csv' in ext and len(ext) > 4)
+
+        if ext in ['.csv', '.txt'] or is_rfb_or_csv_variant:
+            result = self._analyze_text_file(file_path)
+            
+            # Ajuste específico para arquivos da Receita Federal ou variantes CSV
+            if is_rfb_or_csv_variant:
+                # Dados da RFB são tipicamente ISO-8859-1, delimitados por ';' e SEM cabeçalho
+                result['options']['encoding'] = 'ISO-8859-1'
+                result['options']['header'] = 'false'
+                result['options']['delimiter'] = ';'
+                logger.info(f"   -> Formato RFB/CSV-Variant detectado ({ext}). Configurando opções de CSV customizadas.")
+            
+            return result
             
         elif ext == '.parquet':
             return {

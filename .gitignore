@@ -78,3 +78,7 @@ data/checkpoints/
 
 # Configurações locais
 config/local_settings.yaml
+
+# Arquivos de teste
+test/
+test/*.ipynb

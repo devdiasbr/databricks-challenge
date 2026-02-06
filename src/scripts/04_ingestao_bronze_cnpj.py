@@ -7,6 +7,8 @@ import re
 import time
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
+import zipfile
+import json
 import pyspark.sql.functions as F
 from pyspark.sql import SparkSession, DataFrame
 from azure.storage.blob import ContainerClient
@@ -52,6 +54,9 @@ except ImportError:
         return iterable
     tqdm.write = print
 
+# Import SmartFileLoader
+from utils.file_validator import SmartFileLoader
+
 # Windows Hadoop Workaround
 if os.name == 'nt':
     import tempfile
@@ -78,7 +83,17 @@ if os.name == 'nt':
 # Initialize Spark
 spark = SparkSession.builder \
     .appName("IngestaoBronzeCNPJ") \
-    .config("spark.jars.packages", "org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6") \
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+    .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.0.0,org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6") \
+    .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
+    .config("spark.speculation", "false") \
+    .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
+    .config("spark.driver.memory", "8g") \
+    .config("spark.executor.memory", "8g") \
+    .config("spark.sql.shuffle.partitions", "8") \
+    .config("spark.network.timeout", "600s") \
+    .master("local[*]") \
     .getOrCreate()
 
 # Suppress logs
@@ -130,25 +145,19 @@ except ImportError:
 # Configuration
 from utils import config
 
-# Source Config (Account Key) - Mantendo hardcoded se não estiver no config, mas o user disse que está no .env/config
-# O config.py não exporta a Key da Landing, apenas o SAS do Balança/CNPJ.
-# Mas o script original usava uma Key Hardcoded para landingbeca2026jan!
-# O user disse "tem tdo na .env".
-# Vamos ver se a Key está no .env? O config.py não carrega KEY, carrega SAS.
-# Mas o script 04 usa Account Key para a origem:
-# fs.azure.account.key.landingbeca2026jan... = "THyEZ..."
-# Isso é perigoso/feio.
-# Se o config.py tem SAS_TOKEN_CNPJ, deveríamos usar SAS para a origem também, não Key.
-# Vou mudar para SAS se disponível, ou manter a Key mas movendo para .env se possível.
-# Como não tenho a Key no config.py, vou verificar se posso usar o SAS_TOKEN_CNPJ.
-# O container é 'cnpj'. O SAS do config é SAS_TOKEN_CNPJ.
-# Deve funcionar.
-
+# Source Config (Account Key) - From config/env (Secure)
 SOURCE_ACCOUNT = config.SOURCE_ACCOUNT
 SOURCE_SAS = config.SAS_TOKEN_CNPJ
+SOURCE_KEY = getattr(config, 'LANDING_ACCOUNT_KEY', None)
 
-# Configura credenciais de ORIGEM (Landing)
-if SOURCE_SAS:
+# Configura credenciais de ORIGEM (Landing) - Usando Account Key (Prioritário)
+if SOURCE_KEY:
+    # Configura Account Key para acesso total ao container
+    spark.conf.set(f"fs.azure.account.key.{SOURCE_ACCOUNT}.dfs.core.windows.net", SOURCE_KEY)
+    spark.conf.set(f"fs.azure.account.key.{SOURCE_ACCOUNT}.blob.core.windows.net", SOURCE_KEY)
+    print(f"Configured Account Key for {SOURCE_ACCOUNT}")
+elif SOURCE_SAS:
+    # Fallback para SAS se necessário
     spark.conf.set(f"fs.azure.sas.cnpj.{SOURCE_ACCOUNT}.dfs.core.windows.net", SOURCE_SAS)
     spark.conf.set(f"fs.azure.sas.cnpj.{SOURCE_ACCOUNT}.blob.core.windows.net", SOURCE_SAS)
     # ABFSS
@@ -159,44 +168,41 @@ if SOURCE_SAS:
 # Target Config (Raw)
 TARGET_RAW_URL = config.TARGET_RAW_URL
 TARGET_SAS = ""
-TARGET_ACCOUNT = "grupo4storage"
+TARGET_ACCOUNT = config.TARGET_ACCOUNT
 
 if TARGET_RAW_URL:
     if "?" in TARGET_RAW_URL:
         TARGET_SAS = TARGET_RAW_URL.split("?")[1]
-    try:
-        TARGET_ACCOUNT = TARGET_RAW_URL.split("https://")[1].split(".")[0]
-    except:
-        pass
 
 if TARGET_SAS:
     # Configure SAS for grupo4storage (Raw Container)
     account = TARGET_ACCOUNT
     container = "raw"
     
-    # ABFSS Configuration
-    spark.conf.set(f"fs.azure.account.auth.type.{account}.dfs.core.windows.net", "SAS")
-    spark.conf.set(f"fs.azure.sas.token.provider.type.{account}.dfs.core.windows.net", "org.apache.hadoop.fs.azurebfs.sas.FixedSASTokenProvider")
-    spark.conf.set(f"fs.azure.sas.fixed.token.{account}.dfs.core.windows.net", TARGET_SAS)
-    
-    # Blob Configuration (Backup/Logs)
+    # Configuração para WASBS (Blob API) - Mais estável para SAS em local mode
+    # Evita o erro ClassNotFoundException: FixedSASTokenProvider
     spark.conf.set(f"fs.azure.sas.{container}.{account}.blob.core.windows.net", TARGET_SAS)
-    # Also for $logs if needed
-    spark.conf.set(f"fs.azure.sas.$logs.{account}.blob.core.windows.net", TARGET_SAS)
+    
+    # Configuração legado para ABFSS (caso ainda seja usado, mas sem o Provider fixo que falha)
+    # spark.conf.set(f"fs.azure.sas.{container}.{account}.dfs.core.windows.net", TARGET_SAS)
 
 spark.conf.set("fs.azure.enable.check.access", "false")
 spark.conf.set("fs.azure.skipUserGroupMetadataDuringInitialization", "true")
 
 SOURCE_STORAGE_ACCOUNT = SOURCE_ACCOUNT
 SOURCE_CONTAINER = "cnpj"
+# SOURCE mantido em ABFSS pois está usando Account Key (que funciona bem com ABFSS)
 SOURCE_ABFSS_PATH = f"abfss://{SOURCE_CONTAINER}@{SOURCE_STORAGE_ACCOUNT}.dfs.core.windows.net"
 
 TARGET_STORAGE_ACCOUNT = TARGET_ACCOUNT
 TARGET_CONTAINER = "raw"
-TARGET_ABFSS_PATH = f"abfss://{TARGET_CONTAINER}@{TARGET_STORAGE_ACCOUNT}.dfs.core.windows.net/cnpj"
+# Alterado para WASBS para contornar erro de Provider do SAS
+# Ajuste: Adicionado /cnpj para garantir organização dentro do raw (raw/cnpj/empresas...)
+TARGET_ABFSS_PATH = f"wasbs://{TARGET_CONTAINER}@{TARGET_STORAGE_ACCOUNT}.blob.core.windows.net/cnpj"
 
 LOGS_CONTAINER = "$logs"
-LOGS_ABFSS_PATH = f"abfss://{LOGS_CONTAINER}@{TARGET_STORAGE_ACCOUNT}.dfs.core.windows.net"
+# Logs também via WASBS
+LOGS_ABFSS_PATH = f"wasbs://{LOGS_CONTAINER}@{TARGET_STORAGE_ACCOUNT}.blob.core.windows.net"
 
 # Directories
 if os.name == 'nt':
@@ -213,55 +219,57 @@ CSV_ENCODING = "ISO-8859-1"
 
 # Patterns
 ZIP_FILE_PATTERNS = [
-    "*.Empresas.zip",
-    "*.Estabelecimentos.zip",
-    "*.Socios.zip",
-    "*.Simples.zip",
-    "*.Cnaes.zip",
-    "*.Motivos.zip",
-    "*.Municipios.zip",
-    "*.Naturezas.zip",
-    "*.Paises.zip",
-    "*.Qualificacoes.zip"
+    "Empresas*.zip",
+    "Estabelecimentos*.zip",
+    "Socios*.zip",
+    "Simples*.zip",
+    "Cnaes*.zip",
+    "Motivos*.zip",
+    "Municipios*.zip",
+    "Naturezas*.zip",
+    "Paises*.zip",
+    "Qualificacoes*.zip"
 ]
 
 CSV_PATTERNS = {
-    "EMPRECSV": "*.Empresas.csv",   # Matches key in JSON
-    "ESTABELE": "*.Estabelecimentos.csv", # Matches key in JSON
-    "SOCIOCSV": "*.Socios.csv",
-    "SIMPLES": "*.Simples.csv",
-    "CNAECSV": "*.Cnaes.csv",
-    "MOTIVOS": "*.Motivos.csv",
-    "MUNICIPIOS": "*.Municipios.csv",
-    "NATUREZAS": "*.Naturezas.csv",
-    "PAISES": "*.Paises.csv",
-    "QUALIFICACOES": "*.Qualificacoes.csv"
+    "EMPRECSV": "Empresas*.csv",   # Matches key in JSON
+    "ESTABELE": "Estabelecimentos*.csv", # Matches key in JSON
+    "SOCIOCSV": "Socios*.csv",
+    "SIMPLES": "Simples*.csv",
+    "CNAECSV": "Cnaes*.csv",
+    "MOTIVOS": "Motivos*.csv",
+    "MUNICIPIOS": "Municipios*.csv",
+    "NATUREZAS": "Naturezas*.csv",
+    "PAISES": "Paises*.csv",
+    "QUALIFICACOES": "Qualificacoes*.csv"
 }
 
-COLUMN_NAMES = {
-    "empresas": [
-        "cnpj_basico", "razao_social", "natureza_juridica", 
-        "qualificacao_responsavel", "capital_social", "porte_empresa", 
-        "ente_federativo_responsavel"
-    ],
-    "estabelecimentos": [
-        "cnpj_basico", "cnpj_ordem", "cnpj_dv", "identificador_matriz_filial",
-        "nome_fantasia", "situacao_cadastral", "data_situacao_cadastral",
-        "motivo_situacao_cadastral", "nome_cidade_exterior", "pais",
-        "data_inicio_atividade", "cnae_fiscal_principal", "cnae_fiscal_secundaria",
-        "tipo_logradouro", "logradouro", "numero", "complemento", "bairro",
-        "cep", "uf", "municipio", "ddd_1", "telefone_1", "ddd_2", "telefone_2",
-        "ddd_fax", "fax", "correio_eletronico", "situacao_especial", "data_situacao_especial"
-    ],
-    "cnaes": ["codigo", "descricao"],
-    "paises": ["codigo", "descricao"],
-    "naturezas": ["codigo", "descricao"],
-    "municipios": ["codigo", "descricao"],
-    "simples": [
-        "cnpj_basico", "opcao_simples", "data_opcao_simples",
-        "data_exclusao_simples", "opcao_mei", "data_opcao_mei", "data_exclusao_mei"
-    ]
+# Mapeamento para nomes de pastas amigáveis (conforme config.py)
+ENTITY_FOLDER_MAP = {
+    "EMPRECSV": "empresas",
+    "ESTABELE": "estabelecimentos",
+    "SOCIOCSV": "socios",
+    "SIMPLES": "simples",
+    "CNAECSV": "cnaes",
+    "MOTIVOS": "motivos",
+    "MUNICIPIOS": "municipios",
+    "NATUREZAS": "naturezas",
+    "PAISES": "paises",
+    "QUALIFICACOES": "qualificacoes"
 }
+
+# =============================================================================
+# CARREGAMENTO DE SCHEMA (Substitui COLUMN_NAMES hardcoded)
+# =============================================================================
+schema_path = os.path.join(project_root, 'docs', 'schemas', 'cnpj_schema.json')
+try:
+    with open(schema_path, 'r', encoding='utf-8') as f:
+        COLUMN_NAMES = json.load(f)
+    print(f"Schema carregado de: {schema_path}")
+except Exception as e:
+    print(f"Erro ao carregar schema CNPJ: {e}")
+    # Fallback vazio ou erro crítico? Melhor erro crítico ou logar
+    COLUMN_NAMES = {}
 
 # Logging
 class BlobStorageHandler(logging.Handler):
@@ -307,26 +315,32 @@ def setup_logging(pipeline_run_id: str):
     return logger, blob_handler
 
 # Extraction Logic
-def download_and_extract_data(logger):
+def download_data(logger):
     """
-    Downloads zip files from Azure Blob Storage and extracts them.
-    Replaces dbutils extraction logic for local execution using Azure SDK.
+    Downloads zip files from Azure Blob Storage.
+    Extraction is now handled by SmartFileLoader during processing.
     """
-    import zipfile
     import fnmatch
 
     try:
-        # Construct Container URL
-        if SOURCE_SAS:
+        # Construct Container Client
+        if SOURCE_KEY:
+            # Authenticate with Account Key (Prioritized)
+            account_url = f"https://{SOURCE_ACCOUNT}.blob.core.windows.net"
+            container_client = ContainerClient(account_url=account_url, container_name=SOURCE_CONTAINER, credential=SOURCE_KEY)
+            logger.info(f"Authenticated with Account Key for container: {SOURCE_CONTAINER}")
+        elif SOURCE_SAS:
+            # Authenticate with SAS Token
             container_url = f"https://{SOURCE_ACCOUNT}.blob.core.windows.net/{SOURCE_CONTAINER}?{SOURCE_SAS}"
+            container_client = ContainerClient.from_container_url(container_url)
+            logger.info(f"Authenticated with SAS Token for container: {SOURCE_CONTAINER}")
         else:
-            logger.error("Source SAS token missing. Cannot download data.")
+            logger.error("Source credentials (Key or SAS) missing. Cannot download data.")
             return
-
-        container_client = ContainerClient.from_container_url(container_url)
         
         # Ensure directories exist
         os.makedirs(TMP_EXTRACT_DIR, exist_ok=True)
+        # DBFS_STAGING_DIR will be used by SmartLoader for extraction
         os.makedirs(DBFS_STAGING_DIR, exist_ok=True)
         logger.info(f"Directories ready: {TMP_EXTRACT_DIR}, {DBFS_STAGING_DIR}")
         
@@ -349,124 +363,147 @@ def download_and_extract_data(logger):
                 found_files += 1
                 local_zip_path = os.path.join(TMP_EXTRACT_DIR, blob_name)
                 
-                # Retry logic for BadZipFile
+                # Retry logic for download
                 max_retries = 1
                 for attempt in range(max_retries + 1):
-                    # Download if not exists
-                    if not os.path.exists(local_zip_path):
+                    should_download = True
+                    if os.path.exists(local_zip_path):
+                        # Verify integrity
+                        try:
+                            # Verifica tamanho mínimo (ex: 100 bytes) para evitar zips vazios
+                            if os.path.getsize(local_zip_path) < 100:
+                                logger.warning(f"Cached file {blob_name} is too small (<100b). Re-downloading...")
+                                os.remove(local_zip_path)
+                            else:
+                                with zipfile.ZipFile(local_zip_path, 'r') as zf:
+                                    if zf.testzip() is None:
+                                        logger.info(f"Using cached valid file: {blob_name}")
+                                        should_download = False
+                                    else:
+                                        logger.warning(f"Cached file {blob_name} is corrupted. Re-downloading...")
+                                        os.remove(local_zip_path)
+                        except zipfile.BadZipFile:
+                            logger.warning(f"Cached file {blob_name} is invalid (BadZipFile). Re-downloading...")
+                            os.remove(local_zip_path)
+                        except Exception:
+                            # Other errors (e.g. incomplete write), remove and retry
+                            logger.warning(f"Cached file {blob_name} check failed. Re-downloading...")
+                            if os.path.exists(local_zip_path):
+                                os.remove(local_zip_path)
+
+                    if should_download:
                         logger.info(f"Downloading {blob_name} (Attempt {attempt+1})...")
                         try:
                             with open(local_zip_path, "wb") as f:
                                 download_stream = container_client.download_blob(blob.name)
-                                # Download in chunks of 4MB to avoid memory overload
                                 for chunk in download_stream.chunks():
                                     f.write(chunk)
+                            logger.info(f"Downloaded: {blob_name}")
+                            break
                         except Exception as e:
                             logger.error(f"Failed to download {blob_name}: {e}")
+                            if os.path.exists(local_zip_path):
+                                os.remove(local_zip_path)
                             break
                     else:
-                        if attempt == 0:
-                            logger.info(f"Found local file: {blob_name}")
-                
-                    # Extract
-                    logger.info(f"Extracting {blob_name} to {DBFS_STAGING_DIR}...")
-                    try:
-                        with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
-                            zip_ref.extractall(DBFS_STAGING_DIR)
-                        logger.info(f"Successfully extracted {blob_name}")
-                        break # Success
-                    except zipfile.BadZipFile:
-                        logger.warning(f"Bad zip file detected: {blob_name}. Deleting and retrying...")
-                        if os.path.exists(local_zip_path):
-                            os.remove(local_zip_path)
-                        if attempt == max_retries:
-                            logger.error(f"Permanent failure extracting {blob_name} after retries.")
-                    except Exception as e:
-                        logger.error(f"Error extracting {blob_name}: {e}")
+                        logger.info(f"Using cached file: {blob_name}")
                         break
         
         if found_files == 0:
             logger.warning("No matching zip files found in source container.")
             
     except Exception as e:
-        logger.error(f"Error in download/extract: {e}")
+        logger.error(f"Error in download: {e}")
 
-# DataFrame Loading
-def load_csv_as_strings(file_pattern: str, entity_name: str, logger: logging.Logger) -> Optional[DataFrame]:
+# DataFrame Loading and Saving Logic
+def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logger):
     try:
-        # In notebook, they use DBFS_STAGING_DIR. 
-        # But if we want to run this without extraction (e.g. data already there), we use DBFS_STAGING_DIR.
-        # If we are strictly following notebook, we must extract.
-        # But for simplicity and robustness, let's allow fallback or check.
+        # 1. Encontrar todos os arquivos ZIP correspondentes
+        zip_pattern = file_pattern_csv.replace(".csv", ".zip")
+        found_zips = sorted(glob.glob(os.path.join(TMP_EXTRACT_DIR, zip_pattern)))
         
-        # For now, let's point to DBFS_STAGING_DIR as per notebook.
-        # But since we might not have extracted, we might want to point to SOURCE if they were CSVs?
-        # No, they are Zips. So we MUST point to extracted files.
-        
-        # To make it runnable locally without downloading 80GB, I will check if files exist.
-        full_path = f"{DBFS_STAGING_DIR}/{file_pattern}"
-        
-        # If we are on Windows/Local and dir is empty, maybe warn?
-        
-        logger.info(f"[{entity_name}] Loading from {full_path}...")
-        
-        df_raw = spark.read \
-            .option("header", "false") \
-            .option("sep", CSV_DELIMITER) \
-            .option("encoding", CSV_ENCODING) \
-            .option("quote", '"') \
-            .option("escape", '"') \
-            .option("mode", "PERMISSIVE") \
-            .option("inferSchema", "false") \
-            .csv(full_path)
-        
-        column_names = COLUMN_NAMES.get(entity_name, [])
-        
-        if column_names:
-            current_cols = df_raw.columns
-            final_selects = []
+        if not found_zips:
+            # Tenta busca case-insensitive ou sem sufixo numérico se falhar
+            logger.warning(f"[{entity_name}] Nenhum ZIP exato encontrado para {zip_pattern} em {TMP_EXTRACT_DIR}.")
+            # Fallback de busca manual
+            all_zips = glob.glob(os.path.join(TMP_EXTRACT_DIR, "*.zip"))
+            logger.info(f"[{entity_name}] Arquivos disponíveis na pasta: {[os.path.basename(z) for z in all_zips]}")
+            return
             
-            for i, col_name in enumerate(column_names):
-                spark_col = f"_c{i}"
-                if spark_col in current_cols:
-                    final_selects.append(F.col(spark_col).alias(col_name))
-            
-            # Schema evolution support (extra columns)
-            for col in current_cols:
-                if col.startswith("_c"):
-                    try:
-                        col_idx = int(col[2:])
-                        if col_idx >= len(column_names):
-                            final_selects.append(F.col(col))
-                    except ValueError:
-                        pass
-            
-            df_renamed = df_raw.select(*final_selects)
-            return df_renamed
-        else:
-            return df_raw
-            
+        logger.info(f"[{entity_name}] Found {len(found_zips)} zip files to process.")
+        
+        first_batch = True
+        
+        for zip_file in found_zips:
+            try:
+                logger.info(f"[{entity_name}] Processing batch: {os.path.basename(zip_file)}")
+                
+                # 2. Smart Load
+                loader = SmartFileLoader(temp_dir=DBFS_STAGING_DIR)
+                file_info = loader.inspect_and_prepare(zip_file)
+                
+                # Validação de formato (Novo)
+                if file_info.get('format') == 'unknown':
+                    logger.error(f"[{entity_name}] ❌ Erro de validação: Formato desconhecido ou não suportado para {os.path.basename(zip_file)}")
+                    continue
+                
+                df_raw = spark.read.format(file_info['format']).options(**file_info['options']).load(file_info['path'])
+                
+                # 3. Rename/Select Columns
+                column_names = COLUMN_NAMES.get(entity_name, [])
+                df_to_write = df_raw
+                
+                if column_names:
+                    current_cols = df_raw.columns
+                    final_selects = []
+                    for i, col_name in enumerate(column_names):
+                        spark_col = f"_c{i}"
+                        if spark_col in current_cols:
+                            final_selects.append(F.col(spark_col).alias(col_name))
+                    
+                    # Schema evolution (extra columns)
+                    for col in current_cols:
+                        if col.startswith("_c"):
+                            try:
+                                col_idx = int(col[2:])
+                                if col_idx >= len(column_names):
+                                    final_selects.append(F.col(col))
+                            except ValueError:
+                                pass
+                    
+                    df_to_write = df_raw.select(*final_selects)
+                
+                # 4. Save to Delta
+                # Usa mapeamento para nome amigável ou fallback para minúsculo
+                folder_name = ENTITY_FOLDER_MAP.get(entity_name, entity_name.lower())
+                target_path = f"{TARGET_ABFSS_PATH}/{folder_name}"
+                mode = "overwrite" if first_batch else "append"
+                
+                writer = df_to_write.write.format("delta").mode(mode).option("overwriteSchema", "true" if first_batch else "false")
+                
+                if entity_name == "ESTABELE":
+                     writer = writer.partitionBy("uf")
+                elif entity_name == "SIMPLES":
+                     writer = writer.partitionBy("opcao_simples")
+                
+                writer.save(target_path)
+                logger.info(f"[{entity_name}] Batch saved ({mode})")
+                first_batch = False
+                
+                # Cleanup extracted file to save space
+                try:
+                    if os.path.exists(file_info['path']):
+                        # os.remove(file_info['path']) # COMENTADO PARA DEBUG DO USUÁRIO
+                        logger.info(f"   [DEBUG] Mantendo arquivo temporário em: {file_info['path']}")
+                except:
+                    pass
+                    
+            except Exception as e:
+                logger.error(f"[{entity_name}] Error processing zip {zip_file}: {str(e)}")
+                # Continue to next zip?
+                
     except Exception as e:
-        logger.error(f"[{entity_name}] Error loading: {str(e)}")
-        return None
-
-def save_to_delta(df: DataFrame, entity_name: str, logger: logging.Logger):
-    try:
-        target_path = f"{TARGET_ABFSS_PATH}/{entity_name}"
-        logger.info(f"[{entity_name}] Saving to {target_path}...")
-        
-        # Add partitioning if needed (from notebook config)
-        writer = df.write.format("delta").mode("overwrite").option("overwriteSchema", "true")
-        
-        if entity_name == "ESTABELE":
-             writer = writer.partitionBy("uf")
-        elif entity_name == "SIMPLES":
-             writer = writer.partitionBy("opcao_simples")
-             
-        writer.save(target_path)
-        logger.info(f"[{entity_name}] Saved successfully")
-    except Exception as e:
-        logger.error(f"[{entity_name}] Failed to save: {str(e)}")
+        logger.error(f"[{entity_name}] Critical error: {str(e)}")
 
 def run_pipeline():
     start_time = datetime.now()
@@ -478,28 +515,27 @@ def run_pipeline():
     logger.info(f"Run ID: {pipeline_run_id}")
     logger.info("="*80)
     
-    # Run Extraction (Download from Azure + Unzip to Staging)
-    download_and_extract_data(logger)
+    if os.name == 'nt':
+        TMP_EXTRACT_DIR = os.path.join(tempfile.gettempdir(), "cnpj_extract")
+        DBFS_STAGING_DIR = os.path.join(tempfile.gettempdir(), "cnpj_staging")
+        TMP_LOG_DIR = os.path.join(tempfile.gettempdir(), "cnpj_logs")
+    else:
+        TMP_EXTRACT_DIR = "/tmp/cnpj_extract"
+        DBFS_STAGING_DIR = "/tmp/cnpj"
+        TMP_LOG_DIR = "/tmp/cnpj_logs"
+
+    # Log dos diretórios para debug do usuário
+    logger.info(f"📂 Diretório de Download (ZIPs): {TMP_EXTRACT_DIR}")
+    logger.info(f"📂 Diretório de Staging (Extração): {DBFS_STAGING_DIR}")
+    logger.info(f"📂 Diretório de Logs: {TMP_LOG_DIR}")
     
-    total_files = len(CSV_PATTERNS)
-    with tqdm(total=total_files, desc="Processing Entities") as pbar:
+    # Run Extraction (Download from Azure)
+    download_data(logger)
+    
+    total_entities = len(CSV_PATTERNS)
+    with tqdm(total=total_entities, desc="Processing Entities") as pbar:
         for entity_name, file_pattern in CSV_PATTERNS.items():
-            try:
-                df = load_csv_as_strings(file_pattern, entity_name, logger)
-                if df:
-                    # Check if empty (lazy)
-                    try:
-                        if df.limit(1).count() > 0:
-                            save_to_delta(df, entity_name, logger)
-                        else:
-                            logger.warning(f"[{entity_name}] DataFrame is empty")
-                    except Exception as e:
-                         # Likely file not found or path issue
-                         logger.warning(f"[{entity_name}] Could not read data (Files missing?): {str(e)}")
-                else:
-                    logger.warning(f"[{entity_name}] DataFrame creation failed")
-            except Exception as e:
-                logger.error(f"Error processing {entity_name}: {str(e)}")
+            process_entity(entity_name, file_pattern, logger)
             pbar.update(1)
             
     logger.info("PIPELINE COMPLETED")

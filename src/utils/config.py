@@ -19,11 +19,11 @@ if not os.path.exists(os.path.join(project_root, 'src')):
 
 env_path = os.path.join(project_root, '.env')
 
-print(f"🔄 [Config] Tentando carregar .env de: {env_path}")
+print(f"[Config] Tentando carregar .env de: {env_path}")
 loaded = load_dotenv(dotenv_path=env_path)
 
 if not loaded:
-    print("⚠️ [Config] .env não encontrado no caminho explícito. Tentando busca padrão...")
+    print("[Config] .env não encontrado no caminho explícito. Tentando busca padrão...")
     load_dotenv()
 
 # --- Helpers de Configuração ---
@@ -67,20 +67,33 @@ elif CNPJ_URL:
 # Tokens específicos de Origem
 SAS_TOKEN_BALANCA = get_config("AZURE_STORAGE_SAS_TOKEN_BALANCA")
 SAS_TOKEN_CNPJ = get_config("AZURE_STORAGE_SAS_TOKEN_CNPJ")
+LANDING_ACCOUNT_KEY = get_config("AZURE_STORAGE_ACCOUNT_KEY_LANDING")
 
 # 2. DESTINO (Lakehouse: Raw, Trusted, Refined)
 TARGET_RAW_URL = get_config("AZURE_TARGET_STORAGE_RAW_URL")
 TARGET_TRUSTED_URL = get_config("AZURE_TARGET_STORAGE_TRUSTED_URL")
 TARGET_REFINED_URL = get_config("AZURE_TARGET_STORAGE_REFINED_URL")
 
+# Extrai nome da conta de destino (Prioridade: Env Var > URL > Default)
+TARGET_ACCOUNT = get_config("TARGET_ACCOUNT") or get_config("AZURE_TARGET_ACCOUNT")
+
+if not TARGET_ACCOUNT and TARGET_RAW_URL:
+    try:
+        TARGET_ACCOUNT = TARGET_RAW_URL.split("https://")[1].split(".")[0]
+    except Exception:
+        pass
+
+
+
 # Debug de Credenciais (Seguro)
-print(f"ℹ️ [Config] SOURCE Account: {SOURCE_ACCOUNT}")
-print(f"ℹ️ [Config] TARGET RAW URL encontrada? {'✅' if TARGET_RAW_URL else '❌'}")
-print(f"ℹ️ [Config] TARGET TRUSTED URL encontrada? {'✅' if TARGET_TRUSTED_URL else '❌'}")
-print(f"ℹ️ [Config] TARGET REFINED URL encontrada? {'✅' if TARGET_REFINED_URL else '❌'}")
+print(f"[Config] SOURCE Account: {SOURCE_ACCOUNT}")
+print(f"[Config] TARGET Account: {TARGET_ACCOUNT}")
+print(f"[Config] TARGET RAW URL encontrada? {'SIM' if TARGET_RAW_URL else 'NAO'}")
+print(f"[Config] TARGET TRUSTED URL encontrada? {'SIM' if TARGET_TRUSTED_URL else 'NAO'}")
+print(f"[Config] TARGET REFINED URL encontrada? {'SIM' if TARGET_REFINED_URL else 'NAO'}")
 
 if not TARGET_RAW_URL:
-    print("\n🛑 [ERRO CRÍTICO] Variáveis de ambiente não encontradas!")
+    print("\n[ERRO CRITICO] Variáveis de ambiente não encontradas!")
     print("   O arquivo .env NÃO é sincronizado com o Git por segurança.")
     print("   No Databricks, você deve:")
     print("   1. Criar o arquivo .env manualmente na raiz do Repo (Upload ou Editor).")
@@ -102,7 +115,7 @@ STRUCTURE = {
         "containers": ["raw"],
         "folders": {
             "raw": [
-                "balanco_comercial",
+                "balancacomercial",
                 "empresas", "estabelecimentos", "socios", "cnaes", 
                 "municipios", "naturezas", "paises", "simples", 
                 "motivos", "qualificacoes", "outros"
@@ -114,7 +127,7 @@ STRUCTURE = {
     "trusted": {
         "containers": ["trusted"],
         "folders": {
-            "trusted": ["balanca_comercial", "cnpj"] 
+            "trusted": ["balancacomercial", "cnpj"] 
         },
         "description": "Camada Trusted (Silver)",
         "url": TARGET_TRUSTED_URL
