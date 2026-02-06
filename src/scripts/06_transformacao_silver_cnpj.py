@@ -303,8 +303,8 @@ def process_cnpj():
             
             # --- Escrita ---
             
-            if trusted_url:
-                delete_virtual_directory(trusted_url, f"cnpj/{folder_name}")
+            # if trusted_url:
+            #     delete_virtual_directory(trusted_url, f"cnpj/{folder_name}")
 
             logger.info(f"  💾 Salvando em: {target_path} (Delta)")
             
