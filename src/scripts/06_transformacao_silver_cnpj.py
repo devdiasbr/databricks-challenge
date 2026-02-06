@@ -248,7 +248,7 @@ def process_cnpj():
         pbar.set_description(f"Processando: {folder_name}")
         
         source_path = f"{base_url_raw}/cnpj/{folder_name}"
-        target_path = f"{base_url_trusted}/{folder_name}"
+        target_path = f"{base_url_trusted}/cnpj/{folder_name}"
         
         try:
             logger.info(f"  📂 Lendo dados de: {source_path}")
@@ -287,7 +287,7 @@ def process_cnpj():
             # --- Escrita ---
             
             if trusted_url:
-                delete_virtual_directory(trusted_url, folder_name)
+        delete_virtual_directory(trusted_url, f"cnpj/{folder_name}")
 
             logger.info(f"  💾 Salvando em: {target_path} (CSV Latin1)")
             
