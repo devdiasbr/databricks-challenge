@@ -275,7 +275,7 @@ for full_path, name in pbar:
             .option("header", True) 
             .option("delimiter", ";") 
             .option("encoding", "ISO-8859-1") 
-            .option("inferSchema", "true")
+            .option("inferSchema", "false")
             .load(full_path) 
         )
         

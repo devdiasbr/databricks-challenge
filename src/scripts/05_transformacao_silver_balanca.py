@@ -341,6 +341,19 @@ def process_balanca_comercial():
                 writer = writer.partitionBy(*partition_cols)
                 
             writer.save(target_path)
+            
+            # Otimização Delta (Z-ORDER e Compactação)
+            logger.info("  ⚡ Executando OPTIMIZE e VACUUM...")
+            try:
+                # Otimização
+                spark.sql(f"OPTIMIZE delta.`{target_path}`")
+                
+                # Limpeza (Mantém 7 dias de histórico)
+                spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+                spark.sql(f"VACUUM delta.`{target_path}` RETAIN 168 HOURS")
+            except Exception as e:
+                logger.warning(f"  ⚠️ Otimização não executada (pode exigir Databricks Runtime ou Spark configurado): {e}")
+
             logger.info(f"  ✅ Pasta {folder_name} concluída!")
             
         except Exception as e:

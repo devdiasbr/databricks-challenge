@@ -313,6 +313,16 @@ def process_cnpj():
                 .option("overwriteSchema", "true")
                 
             writer.save(target_path)
+            
+            # Otimização Delta
+            logger.info("  ⚡ Executando OPTIMIZE e VACUUM...")
+            try:
+                spark.sql(f"OPTIMIZE delta.`{target_path}`")
+                spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+                spark.sql(f"VACUUM delta.`{target_path}` RETAIN 168 HOURS")
+            except Exception as e:
+                logger.warning(f"  ⚠️ Otimização não executada: {e}")
+
             logger.info(f"  ✅ Pasta {folder_name} concluída!")
             
         except Exception as e:
