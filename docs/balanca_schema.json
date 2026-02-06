@@ -1,0 +1,210 @@
+{
+  "EXPO_2021": {
+    "CO_ANO": "ano",
+    "CO_MES": "mes",
+    "CO_NCM": "codigo_ncm",
+    "CO_UNID": "unidade_estatistica",
+    "CO_PAIS": "codigo_pais_destino",
+    "SG_UF_NCM": "uf_origem",
+    "CO_VIA": "codigo_via_transporte",
+    "CO_URF": "codigo_alfandega",
+    "QT_ESTAT": "quantidade_estatistica",
+    "KG_LIQUIDO": "peso_liquido_kg",
+    "VL_FOB": "valor_fob_usd"
+  },
+
+  "IMP_2021": {
+    "CO_ANO": "ano",
+    "CO_MES": "mes",
+    "CO_NCM": "codigo_ncm",
+    "CO_UNID": "unidade_estatistica",
+    "CO_PAIS": "codigo_pais_origem",
+    "SG_UF_NCM": "uf_destino",
+    "CO_VIA": "codigo_via_transporte",
+    "CO_URF": "codigo_alfandega",
+    "QT_ESTAT": "quantidade_estatistica",
+    "KG_LIQUIDO": "peso_liquido_kg",
+    "VL_FOB": "valor_fob_usd",
+    "VL_FRETE": "valor_frete_usd",
+    "VL_SEGURO": "valor_seguro_usd"
+  },
+
+  "EXP_2021_MUN": {
+    "CO_ANO": "ano",
+    "CO_MES": "mes",
+    "SH4": "codigo_sh4",
+    "CO_PAIS": "codigo_pais_destino",
+    "SG_UF_MUN": "uf_municipio",
+    "CO_MUN": "codigo_municipio",
+    "KG_LIQUIDO": "peso_liquido_kg",
+    "VL_FOB": "valor_fob_usd"
+  },
+
+  "IMP_2021_MUN": {
+    "CO_ANO": "ano",
+    "CO_MES": "mes",
+    "SH4": "codigo_sh4",
+    "CO_PAIS": "codigo_pais_origem",
+    "SG_UF_MUN": "uf_municipio",
+    "CO_MUN": "codigo_municipio",
+    "KG_LIQUIDO": "peso_liquido_kg",
+    "VL_FOB": "valor_fob_usd"
+  },
+
+  "ISIS_CUCI": {
+    "CO_ISIC_SECAO": "codigo_isic_secao",
+    "NO_ISIC_SECAO": "descricao_isic_secao",
+    "CO_CUCI_GRUPO": "codigo_cuci_grupo",
+    "NO_CUCI_GRUPO": "descricao_cuci_grupo"
+  },
+
+  "NCM": {
+    "CO_NCM": "codigo_ncm",
+    "CO_UNID": "unidade_estatistica",
+    "CO_SH6": "codigo_sh6",
+    "CO_PPE": "codigo_ppe_exportacao",
+    "CO_PPI": "codigo_ppi_importacao",
+    "CO_FAT_AGREG": "codigo_fator_agregacao",
+    "CO_CUCI_ITEM": "codigo_cuci_item",
+    "CO_CGCE_N3": "codigo_cgce_n3",
+    "CO_SIIT": "codigo_siit",
+    "CO_ISIC_CLASSE": "codigo_isic_classe",
+    "CO_EXP_SUBSET": "codigo_subset_exportacao",
+    "NO_NCM_POR": "descricao_ncm_pt",
+    "NO_NCM_ESP": "descricao_ncm_es",
+    "NO_NCM_ING": "descricao_ncm_en"
+  },
+
+  "NCM_CGCE": {
+    "CO_CGCE_N3": "codigo_cgce_n3",
+    "NO_CGCE_N3": "descricao_cgce_n3_pt",
+    "NO_CGCE_N3_ING": "descricao_cgce_n3_en",
+    "NO_CGCE_N3_ESP": "descricao_cgce_n3_es",
+    "CO_CGCE_N2": "codigo_cgce_n2",
+    "NO_CGCE_N2": "descricao_cgce_n2_pt",
+    "NO_CGCE_N2_ING": "descricao_cgce_n2_en",
+    "NO_CGCE_N2_ESP": "descricao_cgce_n2_es",
+    "CO_CGCE_N1": "codigo_cgce_n1",
+    "NO_CGCE_N1": "descricao_cgce_n1_pt",
+    "NO_CGCE_N1_ING": "descricao_cgce_n1_en",
+    "NO_CGCE_N1_ESP": "descricao_cgce_n1_es"
+  },
+
+  "NCM_CUCI": {
+    "CO_CUCI_ITEM": "codigo_cuci_item",
+    "NO_CUCI_ITEM": "descricao_cuci_item",
+    "CO_CUCI_SUB": "codigo_cuci_subgrupo",
+    "NO_CUCI_SUB": "descricao_cuci_subgrupo",
+    "CO_CUCI_GRUPO": "codigo_cuci_grupo",
+    "NO_CUCI_GRUPO": "descricao_cuci_grupo",
+    "CO_CUCI_DIVISAO": "codigo_cuci_divisao",
+    "NO_CUCI_DIVISAO": "descricao_cuci_divisao",
+    "CO_CUCI_SEC": "codigo_cuci_secao",
+    "NO_CUCI_SEC": "descricao_cuci_secao"
+  },
+
+  "NCM_FAT_AGREG": {
+    "CO_FAT_AGREG": "codigo_fator_agregacao",
+    "NO_FAT_AGREG": "descricao_fator_agregacao",
+    "NO_FAT_AGREG_GP": "descricao_fator_agregacao_grupo"
+  },
+
+  "NCM_ISIC": {
+    "CO_ISIC_CLASSE": "codigo_isic_classe",
+    "NO_ISIC_CLASSE": "descricao_isic_classe_pt",
+    "NO_ISIC_CLASSE_ING": "descricao_isic_classe_en",
+    "NO_ISIC_CLASSE_ESP": "descricao_isic_classe_es",
+    "CO_ISIC_GRUPO": "codigo_isic_grupo",
+    "NO_ISIC_GRUPO": "descricao_isic_grupo_pt",
+    "NO_ISIC_GRUPO_ING": "descricao_isic_grupo_en",
+    "NO_ISIC_GRUPO_ESP": "descricao_isic_grupo_es",
+    "CO_ISIC_DIVISAO": "codigo_isic_divisao",
+    "NO_ISIC_DIVISAO": "descricao_isic_divisao_pt",
+    "NO_ISIC_DIVISAO_ING": "descricao_isic_divisao_en",
+    "NO_ISIC_DIVISAO_ESP": "descricao_isic_divisao_es",
+    "CO_ISIC_SECAO": "codigo_isic_secao",
+    "NO_ISIC_SECAO": "descricao_isic_secao_pt",
+    "NO_ISIC_SECAO_ING": "descricao_isic_secao_en",
+    "NO_ISIC_SECAO_ESP": "descricao_isic_secao_es"
+  },
+
+  "NCM_PPE": {
+    "CO_PPE": "codigo_ppe",
+    "NO_PPE": "descricao_ppe",
+    "NO_PPE_MIN": "descricao_ppe_resumida",
+    "NO_PPE_ING": "descricao_ppe_en"
+  },
+
+  "NCM_PPI": {
+    "CO_PPI": "codigo_ppi",
+    "NO_PPI": "descricao_ppi",
+    "NO_PPI_MIN": "descricao_ppi_resumida",
+    "NO_PPI_ING": "descricao_ppi_en"
+  },
+
+  "NCM_SH": {
+    "CO_SH6": "codigo_sh6",
+    "NO_SH6_POR": "descricao_sh6_pt",
+    "NO_SH6_ESP": "descricao_sh6_es",
+    "NO_SH6_ING": "descricao_sh6_en",
+    "CO_SH4": "codigo_sh4",
+    "NO_SH4_POR": "descricao_sh4_pt",
+    "NO_SH4_ESP": "descricao_sh4_es",
+    "NO_SH4_ING": "descricao_sh4_en",
+    "CO_SH2": "codigo_sh2",
+    "NO_SH2_POR": "descricao_sh2_pt",
+    "NO_SH2_ESP": "descricao_sh2_es",
+    "NO_SH2_ING": "descricao_sh2_en",
+    "CO_NCM_SECROM": "codigo_secao_ncm",
+    "NO_SEC_POR": "descricao_secao_ncm_pt",
+    "NO_SEC_ESP": "descricao_secao_ncm_es",
+    "NO_SEC_ING": "descricao_secao_ncm_en"
+  },
+
+  "NCM_UNIDADE": {
+    "CO_UNID": "codigo_unidade",
+    "NO_UNID": "descricao_unidade",
+    "SG_UNID": "sigla_unidade"
+  },
+
+  "PAIS": {
+    "CO_PAIS": "codigo_pais",
+    "CO_PAIS_ISON3": "codigo_pais_iso_num",
+    "CO_PAIS_ISOA3": "codigo_pais_iso3",
+    "NO_PAIS": "nome_pais_pt",
+    "NO_PAIS_ING": "nome_pais_en",
+    "NO_PAIS_ESP": "nome_pais_es"
+  },
+
+  "PAIS_BLOCO": {
+    "CO_PAIS": "codigo_pais",
+    "CO_BLOCO": "codigo_bloco_economico",
+    "NO_BLOCO": "nome_bloco_pt",
+    "NO_BLOCO_ING": "nome_bloco_en",
+    "NO_BLOCO_ESP": "nome_bloco_es"
+  },
+
+  "UF": {
+    "CO_UF": "codigo_uf",
+    "SG_UF": "sigla_uf",
+    "NO_UF": "nome_uf",
+    "NO_REGIAO": "nome_regiao"
+  },
+
+  "UF_MUN": {
+    "CO_MUN_GEO": "codigo_municipio_ibge",
+    "NO_MUN": "nome_municipio",
+    "NO_MUN_MIN": "nome_municipio_curto",
+    "SG_UF": "sigla_uf"
+  },
+
+  "URF": {
+    "CO_URF": "codigo_alfandega",
+    "NO_URF": "nome_alfandega"
+  },
+
+  "VIA": {
+    "CO_VIA": "codigo_via_transporte",
+    "NO_VIA": "descricao_via_transporte"
+  }
+}
