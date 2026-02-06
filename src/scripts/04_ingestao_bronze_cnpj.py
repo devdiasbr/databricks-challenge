@@ -330,28 +330,39 @@ def download_and_extract_data(logger):
                 found_files += 1
                 local_zip_path = os.path.join(TMP_EXTRACT_DIR, blob_name)
                 
-                # Download if not exists
-                if not os.path.exists(local_zip_path):
-                    logger.info(f"Downloading {blob_name}...")
-                    try:
-                        with open(local_zip_path, "wb") as f:
-                            download_stream = container_client.download_blob(blob.name)
-                            f.write(download_stream.readall())
-                    except Exception as e:
-                        logger.error(f"Failed to download {blob_name}: {e}")
-                        continue
-                else:
-                    logger.info(f"Skipping download (exists): {blob_name}")
+                # Retry logic for BadZipFile
+                max_retries = 1
+                for attempt in range(max_retries + 1):
+                    # Download if not exists
+                    if not os.path.exists(local_zip_path):
+                        logger.info(f"Downloading {blob_name} (Attempt {attempt+1})...")
+                        try:
+                            with open(local_zip_path, "wb") as f:
+                                download_stream = container_client.download_blob(blob.name)
+                                f.write(download_stream.readall())
+                        except Exception as e:
+                            logger.error(f"Failed to download {blob_name}: {e}")
+                            break
+                    else:
+                        if attempt == 0:
+                            logger.info(f"Found local file: {blob_name}")
                 
-                # Extract
-                logger.info(f"Extracting {blob_name} to {DBFS_STAGING_DIR}...")
-                try:
-                    with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
-                        zip_ref.extractall(DBFS_STAGING_DIR)
-                except zipfile.BadZipFile:
-                    logger.error(f"Bad zip file: {blob_name}")
-                except Exception as e:
-                    logger.error(f"Error extracting {blob_name}: {e}")
+                    # Extract
+                    logger.info(f"Extracting {blob_name} to {DBFS_STAGING_DIR}...")
+                    try:
+                        with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
+                            zip_ref.extractall(DBFS_STAGING_DIR)
+                        logger.info(f"Successfully extracted {blob_name}")
+                        break # Success
+                    except zipfile.BadZipFile:
+                        logger.warning(f"Bad zip file detected: {blob_name}. Deleting and retrying...")
+                        if os.path.exists(local_zip_path):
+                            os.remove(local_zip_path)
+                        if attempt == max_retries:
+                            logger.error(f"Permanent failure extracting {blob_name} after retries.")
+                    except Exception as e:
+                        logger.error(f"Error extracting {blob_name}: {e}")
+                        break
         
         if found_files == 0:
             logger.warning("No matching zip files found in source container.")
