@@ -58,6 +58,9 @@ def get_spark_session():
         .config("spark.speculation", "false") \
         .config("spark.hadoop.mapreduce.fileoutputcommitter.cleanup-failures.ignored", "true") \
         .config("spark.hadoop.fs.azure.enable.check.access", "false") \
+        .config("spark.driver.memory", "4g") \
+        .config("spark.executor.memory", "4g") \
+        .config("spark.driver.maxResultSize", "2g") \
         .master("local[*]")
 
     spark = builder.getOrCreate()
@@ -260,12 +263,12 @@ def process_cnpj():
                 logger.warning("  ⚠️ Falha ao ler como Delta, tentando Parquet...")
                 df = spark.read.option("recursiveFileLookup", "true").parquet(source_path)
             
-            count_records = df.count()
-            logger.info(f"  📊 Registros encontrados: {count_records}")
+            # count_records = df.count()
+            # logger.info(f"  📊 Registros encontrados: {count_records}")
             
-            if count_records == 0:
-                logger.warning("  ⚠️ Pasta vazia ou sem dados válidos. Pulando.")
-                continue
+            # if count_records == 0:
+            #     logger.warning("  ⚠️ Pasta vazia ou sem dados válidos. Pulando.")
+            #     continue
 
             # --- Transformações ---
             
@@ -287,15 +290,13 @@ def process_cnpj():
             # --- Escrita ---
             
             if trusted_url:
-        delete_virtual_directory(trusted_url, f"cnpj/{folder_name}")
+                delete_virtual_directory(trusted_url, f"cnpj/{folder_name}")
 
-            logger.info(f"  💾 Salvando em: {target_path} (CSV Latin1)")
+            logger.info(f"  💾 Salvando em: {target_path} (Delta)")
             
-            writer = df_clean.write.format("csv") \
-                .option("header", "true") \
-                .option("sep", ";") \
-                .option("encoding", "ISO-8859-1") \
-                .mode("append")
+            writer = df_clean.write.format("delta") \
+                .mode("overwrite") \
+                .option("overwriteSchema", "true")
                 
             writer.save(target_path)
             logger.info(f"  ✅ Pasta {folder_name} concluída!")
@@ -304,7 +305,10 @@ def process_cnpj():
             logger.error(f"  ❌ Erro ao processar pasta {folder_name}: {str(e)}")
 
     logger.info("\n🏁 Processamento CNPJ finalizado.")
-    spark.stop()
+    try:
+        spark.stop()
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     process_cnpj()

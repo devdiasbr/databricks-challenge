@@ -312,13 +312,10 @@ def process_balanca_comercial():
                     partition_cols.append(c)
                     break
             
-            # Configuração para escrita em Latin1 (CSV) conforme solicitado
-            logger.info("  💾 Salvando em formato CSV (Latin1/ISO-8859-1)...")
-            writer = df_clean.write.format("csv") \
-                .option("header", "true") \
-                .option("sep", ";") \
-                .option("encoding", "ISO-8859-1") \
-                .mode("append")
+            # Configuração para escrita em Delta
+            logger.info("  💾 Salvando em formato Delta...")
+            writer = df_clean.write.format("delta") \
+                .option("overwriteSchema", "true")
             
             if partition_cols:
                 logger.info(f"    Particionando por: {partition_cols}")
@@ -331,7 +328,10 @@ def process_balanca_comercial():
             logger.error(f"  ❌ Erro ao processar pasta {folder_name}: {str(e)}")
 
     logger.info("\n🏁 Processamento global finalizado.")
-    spark.stop()
+    try:
+        spark.stop()
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     process_balanca_comercial()
