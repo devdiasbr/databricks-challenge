@@ -264,8 +264,12 @@ def process_balanca_comercial():
         try:
             logger.info(f"  📂 Lendo dados de: {source_path}")
             
-            # Tenta ler como Parquet (recursivo para pegar partitions se houver)
-            df = spark.read.option("recursiveFileLookup", "true").parquet(source_path)
+            # Tenta ler como Delta/Parquet (Balança Comercial pode ter sido ingerida como Delta)
+            try:
+                df = spark.read.format("delta").load(source_path)
+            except Exception:
+                logger.warning(f"  ⚠️ Falha ao ler como Delta em {source_path}, tentando Parquet...")
+                df = spark.read.option("recursiveFileLookup", "true").parquet(source_path)
             
             count_records = df.count()
             logger.info(f"  📊 Registros encontrados: {count_records}")
