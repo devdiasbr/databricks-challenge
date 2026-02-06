@@ -2,9 +2,20 @@ import os
 import sys
 
 # Adiciona o diretório 'src' ao sys.path para permitir imports de 'utils'
-current_dir = os.path.dirname(os.path.abspath(__file__))
-src_dir = os.path.dirname(current_dir)
-sys.path.append(src_dir)
+# Configuração robusta de caminhos (Híbrido Local/Databricks)
+try:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    base_dir = os.getcwd()
+
+# Navega para cima até encontrar a pasta 'src'
+current_dir = base_dir
+while not os.path.exists(os.path.join(current_dir, 'src')) and current_dir != os.path.dirname(current_dir):
+    current_dir = os.path.dirname(current_dir)
+
+src_dir = os.path.join(current_dir, 'src')
+if src_dir not in sys.path:
+    sys.path.append(src_dir)
 
 from azure.storage.blob import ContainerClient
 from utils.config import STRUCTURE
