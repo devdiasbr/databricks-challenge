@@ -13,12 +13,19 @@ from azure.storage.blob import ContainerClient
 load_dotenv()
 
 # Configuração do HADOOP_HOME para execução local no Windows
-current_dir = os.path.dirname(os.path.abspath(__file__))
-src_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(src_dir)
+try:
+    current_file = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file)
+    project_root = os.path.dirname(os.path.dirname(current_dir))
+except NameError:
+    # Compatibilidade com Databricks
+    current_dir = os.getcwd()
+    project_root = os.getcwd()
 
 # Adiciona src ao path para importar utils
-sys.path.append(src_dir)
+src_path = os.path.join(project_root, 'src')
+if src_path not in sys.path:
+    sys.path.append(src_path)
 
 hadoop_home = os.path.join(project_root, 'hadoop')
 if os.path.exists(hadoop_home):
@@ -37,9 +44,13 @@ from utils.logging_utils import TqdmLoggingHandler
 logger = logging.getLogger("BronzeToSilver_CNPJ")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
-    handler = TqdmLoggingHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S'))
-    logger.addHandler(handler)
+    try:
+        handler = TqdmLoggingHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S'))
+        logger.addHandler(handler)
+    except Exception:
+        handler = logging.StreamHandler(sys.stdout)
+        logger.addHandler(handler)
 
 def get_spark_session():
     """Cria e configura a sessão Spark com suporte a Delta e Azure."""
@@ -208,8 +219,13 @@ def process_cnpj():
     logger.info(f"\n🚀 Iniciando processamento CNPJ: Bronze -> Silver")
     
     # Carregar Schema
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(current_dir))
+    try:
+        current_file = os.path.abspath(__file__)
+        current_dir = os.path.dirname(current_file)
+        project_root = os.path.dirname(os.path.dirname(current_dir))
+    except NameError:
+        project_root = os.getcwd()
+        
     schema_path = os.path.join(project_root, 'docs', 'cnpj_schema.json')
     
     logger.info(f"📄 Carregando schema de: {schema_path}")
