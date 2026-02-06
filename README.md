@@ -1,117 +1,137 @@
-# Projeto Integrado - Pipeline de Dados (CNPJ & Balança Comercial)
+# 📊 Projeto Integrado - Pipeline de Dados (CNPJ & Balança Comercial)
 
-Este projeto implementa um pipeline de engenharia de dados robusto e escalável para processamento de dados públicos do CNPJ e da Balança Comercial Brasileira. O sistema utiliza **PySpark** para processamento distribuído e **Azure Blob Storage** como Data Lake, seguindo a arquitetura **Medallion (Bronze, Silver, Gold)**.
+![Status](https://img.shields.io/badge/Status-Em_Desenvolvimento-yellow)
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
+![Spark](https://img.shields.io/badge/Apache_Spark-3.3.2-orange)
+![Azure](https://img.shields.io/badge/Cloud-Azure_Blob_Storage-0078D4)
 
-## 📋 Sobre o Projeto
+Este projeto implementa um pipeline de engenharia de dados robusto e escalável para processamento de dados públicos do **CNPJ** e da **Balança Comercial Brasileira**. O sistema utiliza **PySpark** para processamento distribuído e **Azure Blob Storage** como Data Lake, seguindo a arquitetura **Medallion (Bronze, Silver, Gold)**.
 
-O objetivo é ingerir, limpar e transformar grandes volumes de dados (Big Data) provenientes de fontes governamentais, disponibilizando-os em camadas organizadas para análise e consumo. O projeto foi desenhado para rodar tanto em clusters Databricks quanto em ambientes locais (com suporte nativo a Windows via hacks do Hadoop/Winutils).
+---
 
-### Arquitetura de Dados
+## 🏗️ Arquitetura e Fluxo de Dados
 
-O fluxo de dados segue o padrão Medallion:
+O projeto segue o padrão Medallion para garantir qualidade e governança dos dados.
 
-1.  **Landing Zone (Origem)**: Dados brutos (Zips, CSVs) hospedados no Azure Blob Storage.
-2.  **Bronze Layer (Raw)**: Ingestão "as-is" dos dados para formato Delta Lake ou Parquet, mantendo o histórico e rastreabilidade.
-3.  **Silver Layer (Trusted)**: Dados limpos, tipados, deduplicados e enriquecidos. Aplicação de regras de negócio e validação de schema.
-4.  **Gold Layer (Refined)**: (Planejado) Agregações e modelagem dimensional para BI e Analytics.
-
-## 🚀 Funcionalidades Principais
-
-*   **Ingestão Híbrida**: Suporte a leitura de arquivos locais e remotos (Azure Blob Storage).
-*   **Orquestração Simplificada**: Script `00_setup.py` que gerencia dependências e execução do pipeline.
-*   **Logging Centralizado**: Logs de execução salvos localmente e enviados automaticamente para o container `$logs` no Azure, com suporte a barras de progresso (`tqdm`) sem poluição visual.
-*   **Compatibilidade Windows**: Tratamento automático de dependências do Hadoop (`winutils.exe`) para execução do Spark no Windows.
-*   **Resiliência**: Mecanismos de retry, validação de caminhos e fallback para imports.
-
-## 🛠️ Pré-requisitos
-
-*   **Python 3.8+**
-*   **Java 8 ou 11** (Necessário para o Apache Spark)
-*   **Acesso ao Azure**: Connection Strings ou SAS Tokens para os containers de origem e destino.
-
-## ⚙️ Configuração
-
-1.  **Clone o repositório**:
-    ```bash
-    git clone https://github.com/devdiasbr/databricks-challenge.git
-    cd databricks-challenge
-    ```
-
-2.  **Configure as Variáveis de Ambiente**:
-    Crie um arquivo `.env` na raiz do projeto baseando-se no `.env.example`. Preencha com suas credenciais do Azure:
-
-    ```ini
-    # .env
-    BALANCA_ACCOUNT_URL=https://landingbeca2026jan.blob.core.windows.net
-    CNPJ_ACCOUNT_URL=https://landingbeca2026jan.blob.core.windows.net
+```mermaid
+graph LR
+    A[Landing Zone<br/>(Blob Storage)] -->|Ingestão Raw| B[(Bronze Layer<br/>Delta/Parquet)]
+    B -->|Limpeza & Schema| C[(Silver Layer<br/>Delta Lake)]
+    C -->|Agregações| D[(Gold Layer<br/>Refined Tables)]
     
-    # SAS Tokens (Exemplos)
-    AZURE_STORAGE_SAS_TOKEN_BALANCA="?sv=2022-11-02&ss=b&srt=sco..."
-    AZURE_STORAGE_SAS_TOKEN_CNPJ="?sv=2022-11-02&ss=b&srt=sco..."
+    subgraph "Fontes de Dados"
+        CNPJ[Arquivos CNPJ<br/>(ZIP/CSV)]
+        BAL[Balança Comercial<br/>(CSV)]
+    end
     
-    # Targets
-    AZURE_TARGET_STORAGE_RAW_URL="https://grupo4storage.blob.core.windows.net/raw?..."
-    AZURE_TARGET_STORAGE_TRUSTED_URL="https://grupo4storage.blob.core.windows.net/trusted?..."
-    ```
-
-## ▶️ Como Executar
-
-O projeto possui um orquestrador central que facilita a execução.
-
-### Execução Completa (Setup + Pipeline)
-
-```bash
-python src/scripts/00_setup.py
+    CNPJ --> A
+    BAL --> A
 ```
 
-Este comando irá:
-1.  Instalar as dependências do `requirements.txt`.
-2.  Executar a ingestão Bronze (Balança e CNPJ).
-3.  Executar a transformação Silver (Balança e CNPJ).
+1.  **Landing Zone**: Dados brutos hospedados no Azure Blob Storage (containers `landing...`).
+2.  **Bronze Layer**: Dados ingeridos "as-is", convertidos para Delta/Parquet para performance, mantendo histórico.
+3.  **Silver Layer**: Dados limpos, tipados (Schema Enforcement), deduplicados e enriquecidos com regras de negócio.
+4.  **Gold Layer**: (Roadmap) Dados agregados prontos para consumo por ferramentas de BI (Power BI, Tableau).
 
-### Execução Parcial (Skipping Steps)
+---
 
-Você pode pular etapas que já foram concluídas para ganhar tempo:
+## 🚀 Funcionalidades e Diferenciais
 
-```bash
-# Pular instalação de dependências e ingestão Bronze
-python src/scripts/00_setup.py --skip-deps --skip-bronze
+*   **Ingestão Híbrida Inteligente**: Os scripts detectam automaticamente se estão rodando no **Databricks** ou **Localmente**, ajustando caminhos e métodos de autenticação.
+*   **Orquestração Centralizada**: Um único ponto de entrada (`00_setup.py`) gerencia dependências e a execução sequencial do pipeline.
+*   **Observabilidade**: Logs detalhados são enviados para o console (com barras de progresso `tqdm`) e persistidos automaticamente no container `$logs` do Azure.
+*   **Suporte a Windows**: O projeto baixa e configura automaticamente o `winutils.exe` (Hadoop binaries) para permitir a execução do Spark no Windows sem dores de cabeça.
+*   **Atomicidade**: Uso de operações atômicas do Delta Lake (`overwrite` mode) para evitar estados inconsistentes e erros de `DirectoryIsNotEmpty`.
 
-# Pular apenas a camada Silver
-python src/scripts/00_setup.py --skip-silver
-```
+---
 
 ## 📂 Estrutura do Projeto
 
 ```text
 /
-├── docs/                   # Documentação e schemas JSON
-├── hadoop/                 # Binários do Hadoop para suporte Windows
+├── docs/                       # Documentação técnica e schemas JSON
+├── hadoop/                     # Binários do Hadoop (winutils) gerenciados automaticamente
 ├── src/
-│   ├── scripts/            # Scripts principais do pipeline
-│   │   ├── 00_setup.py     # Orquestrador
-│   │   ├── 03_*.py         # Ingestão Bronze
-│   │   ├── 04_*.py         # Ingestão Bronze (CNPJ)
-│   │   ├── 05_*.py         # Transformação Silver
-│   │   └── 06_*.py         # Transformação Silver (CNPJ)
-│   ├── utils/              # Módulos utilitários
-│   │   ├── config.py       # Gerenciamento de configuração e .env
-│   │   ├── logging_utils.py# Configuração avançada de logs
-│   │   └── transformations.py # Funções de transformação Spark
-├── requirements.txt        # Dependências Python
-└── ingestion.ipynb         # Notebook de referência (Databricks)
+│   ├── scripts/                # Scripts do Pipeline
+│   │   ├── 00_setup.py         # 🎮 Orchestrator: Gerencia todo o fluxo
+│   │   ├── 01_listagem_*.py    # 🔍 Diagnóstico: Lista arquivos na origem para conferência
+│   │   ├── 02_setup_*.py       # 🛠️ Setup: Cria e valida containers de destino (Raw/Trusted)
+│   │   ├── 03_ingestao_*.py    # 📥 Bronze: Ingestão Balança Comercial
+│   │   ├── 04_ingestao_*.py    # 📥 Bronze: Ingestão CNPJ (extração de ZIPs)
+│   │   ├── 05_transf_*.py      # 🔄 Silver: Transformação Balança (Limpeza, Tipagem)
+│   │   └── 06_transf_*.py      # 🔄 Silver: Transformação CNPJ (Schema Mapping)
+│   ├── utils/                  # Bibliotecas compartilhadas
+│   │   ├── config.py           # Gerenciamento de configuração e variáveis de ambiente
+│   │   ├── logging_utils.py    # Handler de logs customizado
+│   │   └── transformations.py  # Funções reutilizáveis Spark
+├── requirements.txt            # Dependências do projeto
+└── README.md                   # Este arquivo
 ```
 
-## 🔍 Detalhes de Implementação
+---
 
-### Ingestão CNPJ
-Os dados de CNPJ são arquivos ZIP gigantes contendo CSVs. O script `04_ingestao_bronze_cnpj.py`:
-1.  Conecta no Blob Storage via `azure-storage-blob`.
-2.  Baixa e extrai os arquivos ZIP em streaming/chunks para uma área de staging local.
-3.  Lê os CSVs extraídos com Spark e salva em formato Delta/Parquet na camada Bronze.
+## 🛠️ Como Executar
 
-### Logs e Monitoramento
-Utilizamos um `TqdmLoggingHandler` customizado em `src/utils/logging_utils.py` que permite exibir barras de progresso (`tqdm`) no terminal sem que os logs de INFO/WARNING quebrem a visualização. Todos os logs são persistidos no container `$logs` do Azure para auditoria.
+### 1. Pré-requisitos
+*   Python 3.8 ou superior.
+*   Java 8 ou 11 (JRE/JDK) instalado e configurado no PATH.
+*   Acesso aos containers do Azure Blob Storage (SAS Tokens).
+
+### 2. Configuração (.env)
+Crie um arquivo `.env` na raiz baseado no `.env.example` e preencha suas credenciais:
+
+```ini
+BALANCA_ACCOUNT_URL=https://seu-storage.blob.core.windows.net
+AZURE_STORAGE_SAS_TOKEN_BALANCA="?sv=..."
+# ... (ver .env.example para lista completa)
+```
+
+### 3. Execução
+O modo mais fácil é usar o orquestrador:
+
+```bash
+# Executa tudo (Instalação + Bronze + Silver)
+python src/scripts/00_setup.py
+
+# Se já instalou as libs, pule a etapa de deps:
+python src/scripts/00_setup.py --skip-deps
+
+# Para rodar apenas a camada Silver (ex: reprocessamento):
+python src/scripts/00_setup.py --skip-deps --skip-bronze
+```
 
 ---
-**Desenvolvido por Grupo 4 - Projeto Integrado**
+
+## 🧠 Decisões de Design
+
+### Por que Delta Lake?
+Utilizamos Delta Lake na camada Silver para garantir **ACID Transactions**. Isso nos permite sobrescrever dados de forma segura (`overwriteSchema`) sem corromper leituras concorrentes e sem precisar deletar diretórios manualmente, prevenindo erros de `DirectoryIsNotEmpty`.
+
+### Tratamento de Arquivos ZIP (CNPJ)
+Os dados do CNPJ vêm em arquivos ZIP massivos contendo CSVs. Nossa estratégia de ingestão (Script 04):
+1.  Faz o download em streaming (chunks) para evitar estouro de memória.
+2.  Extrai localmente em área temporária.
+3.  Lê com Spark e converte imediatamente para Parquet/Delta, descartando o CSV bruto.
+
+### Fallback de Caminhos (`__file__`)
+Para suportar execução local (VS Code) e remota (Databricks Notebooks), usamos um padrão robusto de resolução de caminhos:
+```python
+try:
+    base_dir = os.path.dirname(os.path.abspath(__file__)) # Funciona local
+except NameError:
+    base_dir = os.getcwd() # Funciona no Databricks
+```
+
+---
+
+## 🔧 Troubleshooting
+
+| Erro | Causa Provável | Solução |
+|------|----------------|---------|
+| `DirectoryIsNotEmpty` | Conflito na sobrescrita de diretórios no Blob Storage. | O código já foi atualizado para usar `.mode("overwrite")` do Delta. Não apague pastas manualmente durante a execução. |
+| `Winutils not found` | Falta de binários do Hadoop no Windows. | O script baixa o `winutils.exe` automaticamente. Se falhar, verifique sua conexão ou permissões na pasta `hadoop/`. |
+| `403 Forbidden` | Token SAS expirado ou incorreto. | Verifique o `.env`. O token deve começar com `?` e não deve conter quebras de linha. |
+
+---
+
+**Desenvolvido por Grupo 4**
