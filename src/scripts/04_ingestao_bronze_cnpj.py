@@ -213,23 +213,29 @@ CSV_ENCODING = "ISO-8859-1"
 
 # Patterns
 ZIP_FILE_PATTERNS = [
-    "Cnaes.zip",
-    "Empresas[0-5].zip",
-    "Estabelecimentos[0-5].zip",
-    "Paises.zip",
-    "Naturezas.zip",
-    "Municipios.zip",
-    "Simples.zip"
+    "*.Empresas.zip",
+    "*.Estabelecimentos.zip",
+    "*.Socios.zip",
+    "*.Simples.zip",
+    "*.Cnaes.zip",
+    "*.Motivos.zip",
+    "*.Municipios.zip",
+    "*.Naturezas.zip",
+    "*.Paises.zip",
+    "*.Qualificacoes.zip"
 ]
 
 CSV_PATTERNS = {
-    "empresas": "*EMPRECSV",
-    "estabelecimentos": "*ESTABELE",
-    "cnaes": "*CNAECSV",
-    "paises": "*PAISCSV",
-    "naturezas": "*NATJUCSV",
-    "municipios": "*MUNICCSV",
-    "simples": "*SIMPLES.CSV*"
+    "EMPRECSV": "*.Empresas.csv",   # Matches key in JSON
+    "ESTABELE": "*.Estabelecimentos.csv", # Matches key in JSON
+    "SOCIOCSV": "*.Socios.csv",
+    "SIMPLES": "*.Simples.csv",
+    "CNAECSV": "*.Cnaes.csv",
+    "MOTIVOS": "*.Motivos.csv",
+    "MUNICIPIOS": "*.Municipios.csv",
+    "NATUREZAS": "*.Naturezas.csv",
+    "PAISES": "*.Paises.csv",
+    "QUALIFICACOES": "*.Qualificacoes.csv"
 }
 
 COLUMN_NAMES = {
@@ -451,9 +457,9 @@ def save_to_delta(df: DataFrame, entity_name: str, logger: logging.Logger):
         # Add partitioning if needed (from notebook config)
         writer = df.write.format("delta").mode("overwrite").option("overwriteSchema", "true")
         
-        if entity_name == "estabelecimentos":
+        if entity_name == "ESTABELE":
              writer = writer.partitionBy("uf")
-        elif entity_name == "simples":
+        elif entity_name == "SIMPLES":
              writer = writer.partitionBy("opcao_simples")
              
         writer.save(target_path)
