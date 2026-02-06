@@ -223,14 +223,7 @@ def get_schema_mapping(folder_name, schema):
 def process_cnpj():
     logger.info(f"\n🚀 Iniciando processamento CNPJ: Bronze -> Silver")
     
-    # Carregar Schema
-    try:
-        current_file = os.path.abspath(__file__)
-        current_dir = os.path.dirname(current_file)
-        project_root = os.path.dirname(os.path.dirname(current_dir))
-    except NameError:
-        project_root = os.getcwd()
-        
+    # Carregar Schema usando o project_root global calculado no início do script
     schema_path = os.path.join(project_root, 'docs', 'cnpj_schema.json')
     
     logger.info(f"📄 Carregando schema de: {schema_path}")
