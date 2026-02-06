@@ -15,13 +15,13 @@ O projeto segue o padrão Medallion para garantir qualidade e governança dos da
 
 ```mermaid
 graph LR
-    A[Landing Zone<br/>(Blob Storage)] -->|Ingestão Raw| B[(Bronze Layer<br/>Delta/Parquet)]
-    B -->|Limpeza & Schema| C[(Silver Layer<br/>Delta Lake)]
-    C -->|Agregações| D[(Gold Layer<br/>Refined Tables)]
+    A["Landing Zone<br/>(Blob Storage)"] -->|Ingestão Raw| B[("Bronze Layer<br/>Delta/Parquet")]
+    B -->|Limpeza & Schema| C[("Silver Layer<br/>Delta Lake")]
+    C -->|Agregações| D[("Gold Layer<br/>Refined Tables")]
     
     subgraph "Fontes de Dados"
-        CNPJ[Arquivos CNPJ<br/>(ZIP/CSV)]
-        BAL[Balança Comercial<br/>(CSV)]
+        CNPJ["Arquivos CNPJ<br/>(ZIP/CSV)"]
+        BAL["Balança Comercial<br/>(CSV)"]
     end
     
     CNPJ --> A
