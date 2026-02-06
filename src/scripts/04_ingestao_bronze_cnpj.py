@@ -417,6 +417,7 @@ def load_csv_as_strings(file_pattern: str, entity_name: str, logger: logging.Log
             .option("quote", '"') \
             .option("escape", '"') \
             .option("mode", "PERMISSIVE") \
+            .option("inferSchema", "false") \
             .csv(full_path)
         
         column_names = COLUMN_NAMES.get(entity_name, [])
