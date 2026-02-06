@@ -339,7 +339,9 @@ def download_and_extract_data(logger):
                         try:
                             with open(local_zip_path, "wb") as f:
                                 download_stream = container_client.download_blob(blob.name)
-                                f.write(download_stream.readall())
+                                # Download in chunks of 4MB to avoid memory overload
+                                for chunk in download_stream.chunks():
+                                    f.write(chunk)
                         except Exception as e:
                             logger.error(f"Failed to download {blob_name}: {e}")
                             break
