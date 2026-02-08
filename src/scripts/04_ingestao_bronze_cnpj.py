@@ -81,26 +81,28 @@ if os.name == 'nt':
         os.environ['PATH'] += os.pathsep + hadoop_bin
 
 # Initialize Spark
-is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ
+is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")
 
-builder = SparkSession.builder \
-    .appName("IngestaoBronzeCNPJ") \
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-    .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
-    .config("spark.speculation", "false") \
-    .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
-
-if not is_databricks:
-    builder = builder \
+if is_databricks:
+    # No Databricks, usar a sessão existente
+    spark = SparkSession.builder.getOrCreate()
+else:
+    # Local Environment
+    builder = SparkSession.builder \
+        .appName("IngestaoBronzeCNPJ") \
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+        .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
+        .config("spark.speculation", "false") \
+        .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
         .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.0.0,org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6") \
         .config("spark.driver.memory", "8g") \
         .config("spark.executor.memory", "8g") \
         .config("spark.sql.shuffle.partitions", "8") \
         .config("spark.network.timeout", "600s") \
         .master("local[*]")
-
-spark = builder.getOrCreate()
+    
+    spark = builder.getOrCreate()
 
 # Suppress logs
 spark.sparkContext.setLogLevel("WARN")
