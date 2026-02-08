@@ -162,7 +162,13 @@ else:
     # Se não tem SAS (Account Key?), usa ABFSS
     TARGET_ABFSS_PATH = f"abfss://{TARGET_CONTAINER}@{TARGET_ACCOUNT}.dfs.core.windows.net"
 
-SOURCE_ABFSS_PATH = f"abfss://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.dfs.core.windows.net"
+# Source:
+# Força WASBS se estiver usando SAS no Source também, para evitar inconsistências
+if SOURCE_SAS:
+    spark.conf.set(f"fs.azure.sas.{SOURCE_CONTAINER}.{SOURCE_ACCOUNT}.blob.core.windows.net", SOURCE_SAS)
+    SOURCE_ABFSS_PATH = f"wasbs://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.blob.core.windows.net"
+else:
+    SOURCE_ABFSS_PATH = f"abfss://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.dfs.core.windows.net"
 
 # =============================================================================
 # CARREGAMENTO DE SCHEMA
