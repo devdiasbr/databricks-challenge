@@ -5,10 +5,23 @@ import logging
 import time
 
 # Adiciona diretório src ao path para importar utils
-current_dir = os.path.dirname(os.path.abspath(__file__))
+# Configuração robusta de caminhos (Híbrido Local/Databricks)
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    current_dir = os.getcwd()
+
 src_dir = os.path.dirname(current_dir)
+# Ajuste: se estiver rodando da raiz (ex: databricks), src pode estar dentro de current_dir
+if not os.path.exists(os.path.join(src_dir, 'utils')):
+    if os.path.exists(os.path.join(current_dir, 'src')):
+        src_dir = os.path.join(current_dir, 'src')
+    elif os.path.exists(os.path.join(current_dir, 'utils')): # Já está dentro de src
+        src_dir = current_dir
+
 project_root = os.path.dirname(src_dir)
-sys.path.append(src_dir)
+if src_dir not in sys.path:
+    sys.path.append(src_dir)
 
 # Tenta importar o handler de log customizado, se falhar usa stream padrão
 try:
@@ -58,7 +71,11 @@ def main():
     parser.add_argument("--skip-bronze-cnpj", action="store_true", help="Pula Ingestão Bronze - CNPJ")
     parser.add_argument("--skip-silver-balanca", action="store_true", help="Pula Transformação Silver - Balança")
     parser.add_argument("--skip-silver-cnpj", action="store_true", help="Pula Transformação Silver - CNPJ")
-    args = parser.parse_args()
+    
+    # parse_known_args permite ignorar argumentos injetados pelo kernel (ex: -f kernel.json)
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        logger.info(f"⚠️ Argumentos desconhecidos ignorados (provavelmente do kernel): {unknown}")
 
     logger.info("🔧 === Setup e Orquestração do Pipeline === 🔧\n")
     
@@ -68,7 +85,7 @@ def main():
     if not args.skip_deps:
         if not run_command("pip install -r requirements.txt", "Instalação de Dependências"):
             logger.error("🛑 Pipeline interrompido devido a erro nas dependências.")
-            sys.exit(1)
+            raise RuntimeError("Falha nas dependências")
     else:
         logger.info("⏭️ Pulando Instalação de Dependências")
 
@@ -88,7 +105,7 @@ def main():
         cmd = f"python {script}"
         if not run_command(cmd, desc):
             logger.error(f"🛑 Pipeline interrompido na etapa Bronze: {desc}")
-            sys.exit(1)
+            raise RuntimeError(f"Falha na etapa Bronze: {desc}")
 
     # 3. Camada Silver (Transformação)
     silver_scripts = []
@@ -106,7 +123,7 @@ def main():
         cmd = f"python {script}"
         if not run_command(cmd, desc):
             logger.error(f"🛑 Pipeline interrompido na etapa Silver: {desc}")
-            sys.exit(1)
+            raise RuntimeError(f"Falha na etapa Silver: {desc}")
 
     duration = time.time() - start_total
     logger.info(f"🎉 Pipeline Completo Finalizado com Sucesso! Tempo total: {duration:.2f}s")
