@@ -317,7 +317,35 @@ for full_path, name in pbar:
             file_info['options']['encoding'] = 'ISO-8859-1'
 
         # 3. Leitura com Spark (Lê do disco local processado/extraído)
-        df_temp = spark.read.format(file_info['format']).options(**file_info['options']).load(file_info['path'])
+        spark_path = file_info['path']
+        
+        # [DATABRICKS COMPATIBILITY]
+        # Se estiver no Databricks, o Spark (Executors) não vê o disco local do Driver (/tmp).
+        # Precisamos mover o arquivo para o DBFS ou usar dbfs:/ se acessível.
+        if "DATABRICKS_RUNTIME_VERSION" in os.environ:
+            try:
+                # Usa /dbfs mount se disponível para copiar o arquivo
+                if os.path.exists("/dbfs"):
+                    dbfs_dir = os.path.join("/dbfs", "tmp", "balanca_bridge")
+                    os.makedirs(dbfs_dir, exist_ok=True)
+                    
+                    fname = os.path.basename(spark_path)
+                    dbfs_path_os = os.path.join(dbfs_dir, fname)
+                    
+                    # Copia do Local Driver -> DBFS (acessível por todos os nós)
+                    shutil.copy2(spark_path, dbfs_path_os)
+                    
+                    # Converte para path que o Spark entende (dbfs:/)
+                    spark_path = f"dbfs:/tmp/balanca_bridge/{fname}"
+                    # logger.info(f"   [Databricks] Movido para DBFS: {spark_path}")
+                else:
+                    # Fallback: tenta ler via file:// (funciona apenas em Single Node)
+                    spark_path = f"file://{spark_path}"
+            except Exception as e:
+                logger.warning(f"   [Databricks] Falha ao mover para DBFS ({e}). Tentando leitura direta.")
+                spark_path = f"file://{spark_path}"
+
+        df_temp = spark.read.format(file_info['format']).options(**file_info['options']).load(spark_path)
         
         # Aplicar mapeamento de schema se existir
         mapping = get_mapping_for_file(effective_filename)

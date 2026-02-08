@@ -453,7 +453,32 @@ def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logg
                     logger.error(f"[{entity_name}] ❌ Erro de validação: Formato desconhecido ou não suportado para {os.path.basename(zip_file)}")
                     continue
                 
-                df_raw = spark.read.format(file_info['format']).options(**file_info['options']).load(file_info['path'])
+                spark_path = file_info['path']
+                
+                # [DATABRICKS COMPATIBILITY]
+                # Se estiver no Databricks, mover arquivo local (/tmp) para DBFS para que Spark Executors tenham acesso
+                if "DATABRICKS_RUNTIME_VERSION" in os.environ:
+                    try:
+                        if os.path.exists("/dbfs"):
+                            dbfs_dir = os.path.join("/dbfs", "tmp", "cnpj_bridge")
+                            os.makedirs(dbfs_dir, exist_ok=True)
+                            
+                            fname = os.path.basename(spark_path)
+                            dbfs_path_os = os.path.join(dbfs_dir, fname)
+                            
+                            # Copia Local Driver -> DBFS
+                            import shutil
+                            shutil.copy2(spark_path, dbfs_path_os)
+                            
+                            # Path Spark (dbfs:/)
+                            spark_path = f"dbfs:/tmp/cnpj_bridge/{fname}"
+                        else:
+                            spark_path = f"file://{spark_path}"
+                    except Exception as e:
+                        logger.warning(f"[{entity_name}] Falha ao mover para DBFS: {e}. Tentando file://")
+                        spark_path = f"file://{spark_path}"
+
+                df_raw = spark.read.format(file_info['format']).options(**file_info['options']).load(spark_path)
                 
                 # 3. Rename/Select Columns
                 column_names = COLUMN_NAMES.get(entity_name, [])
