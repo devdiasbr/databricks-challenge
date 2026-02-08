@@ -458,22 +458,29 @@ def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logg
                 # [DATABRICKS COMPATIBILITY]
                 # Se estiver no Databricks, mover arquivo local (/tmp) para DBFS para que Spark Executors tenham acesso
                 if "DATABRICKS_RUNTIME_VERSION" in os.environ:
+                    logger.info(f"[{entity_name}] [Databricks] Movendo arquivo para DBFS para leitura Spark...")
                     try:
-                        if os.path.exists("/dbfs"):
-                            dbfs_dir = os.path.join("/dbfs", "tmp", "cnpj_bridge")
-                            os.makedirs(dbfs_dir, exist_ok=True)
-                            
-                            fname = os.path.basename(spark_path)
-                            dbfs_path_os = os.path.join(dbfs_dir, fname)
-                            
-                            # Copia Local Driver -> DBFS
-                            import shutil
-                            shutil.copy2(spark_path, dbfs_path_os)
-                            
-                            # Path Spark (dbfs:/)
-                            spark_path = f"dbfs:/tmp/cnpj_bridge/{fname}"
-                        else:
-                            spark_path = f"file://{spark_path}"
+                        fname = os.path.basename(spark_path)
+                        dbfs_bridge_path = f"dbfs:/tmp/cnpj_bridge/{fname}"
+                        
+                        # Tenta usar dbutils (Padrão Databricks)
+                        try:
+                            from pyspark.dbutils import DBUtils
+                            dbutils = DBUtils(spark)
+                            dbutils.fs.cp(f"file:{spark_path}", dbfs_bridge_path)
+                            spark_path = dbfs_bridge_path
+                        except ImportError:
+                            # Fallback para /dbfs (Mount)
+                            if os.path.exists("/dbfs"):
+                                dbfs_dir = os.path.join("/dbfs", "tmp", "cnpj_bridge")
+                                os.makedirs(dbfs_dir, exist_ok=True)
+                                dbfs_path_os = os.path.join(dbfs_dir, fname)
+                                import shutil
+                                shutil.copy2(spark_path, dbfs_path_os)
+                                spark_path = f"dbfs:/tmp/cnpj_bridge/{fname}"
+                            else:
+                                spark_path = f"file://{spark_path}"
+                                
                     except Exception as e:
                         logger.warning(f"[{entity_name}] Falha ao mover para DBFS: {e}. Tentando file://")
                         spark_path = f"file://{spark_path}"

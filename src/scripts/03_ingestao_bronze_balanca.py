@@ -323,26 +323,32 @@ for full_path, name in pbar:
         # Se estiver no Databricks, o Spark (Executors) não vê o disco local do Driver (/tmp).
         # Precisamos mover o arquivo para o DBFS ou usar dbfs:/ se acessível.
         if "DATABRICKS_RUNTIME_VERSION" in os.environ:
+            logger.info(f"   [Databricks] Preparando arquivo para leitura distribuída: {name}")
             try:
-                # Usa /dbfs mount se disponível para copiar o arquivo
-                if os.path.exists("/dbfs"):
-                    dbfs_dir = os.path.join("/dbfs", "tmp", "balanca_bridge")
-                    os.makedirs(dbfs_dir, exist_ok=True)
-                    
-                    fname = os.path.basename(spark_path)
-                    dbfs_path_os = os.path.join(dbfs_dir, fname)
-                    
-                    # Copia do Local Driver -> DBFS (acessível por todos os nós)
-                    shutil.copy2(spark_path, dbfs_path_os)
-                    
-                    # Converte para path que o Spark entende (dbfs:/)
-                    spark_path = f"dbfs:/tmp/balanca_bridge/{fname}"
-                    # logger.info(f"   [Databricks] Movido para DBFS: {spark_path}")
-                else:
-                    # Fallback: tenta ler via file:// (funciona apenas em Single Node)
-                    spark_path = f"file://{spark_path}"
+                fname = os.path.basename(spark_path)
+                dbfs_bridge_path = f"dbfs:/tmp/balanca_bridge/{fname}"
+                
+                # Tenta usar dbutils via SparkSession (mais robusto que /dbfs)
+                try:
+                    from pyspark.dbutils import DBUtils
+                    dbutils = DBUtils(spark)
+                    # Copia "file:/" (local driver) -> "dbfs:/" (distribuído)
+                    dbutils.fs.cp(f"file:{spark_path}", dbfs_bridge_path)
+                    spark_path = dbfs_bridge_path
+                    # logger.info(f"   [Databricks] Arquivo movido via dbutils para: {spark_path}")
+                except ImportError:
+                    # Fallback para montagem /dbfs via shutil
+                    if os.path.exists("/dbfs"):
+                        dbfs_dir = os.path.join("/dbfs", "tmp", "balanca_bridge")
+                        os.makedirs(dbfs_dir, exist_ok=True)
+                        dbfs_path_os = os.path.join(dbfs_dir, fname)
+                        shutil.copy2(spark_path, dbfs_path_os)
+                        spark_path = f"dbfs:/tmp/balanca_bridge/{fname}"
+                    else:
+                        spark_path = f"file://{spark_path}"
+
             except Exception as e:
-                logger.warning(f"   [Databricks] Falha ao mover para DBFS ({e}). Tentando leitura direta.")
+                logger.warning(f"   [Databricks] Falha na ponte Local-DBFS ({e}). Tentando leitura direta.")
                 spark_path = f"file://{spark_path}"
 
         df_temp = spark.read.format(file_info['format']).options(**file_info['options']).load(spark_path)
