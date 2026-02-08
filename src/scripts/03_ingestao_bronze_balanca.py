@@ -98,16 +98,21 @@ from utils.file_validator import SmartFileLoader
 # =============================================================================
 def get_spark_session():
     # logger.info("Initializing Spark Session with Delta support...")
+    is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ
+    
     builder = SparkSession.builder \
         .appName("IngestaoBronzeBalanca") \
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-        .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.0.0,org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6") \
-        .config("spark.driver.extraJavaOptions", "-Divy.message.logger.level=4 -Dlog4j.rootCategory=ERROR") \
         .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
         .config("spark.speculation", "false") \
-        .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
-        .master("local[*]")
+        .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
+
+    if not is_databricks:
+        builder = builder \
+            .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.0.0,org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6") \
+            .config("spark.driver.extraJavaOptions", "-Divy.message.logger.level=4 -Dlog4j.rootCategory=ERROR") \
+            .master("local[*]")
 
     spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("ERROR")
@@ -162,13 +167,7 @@ else:
     # Se não tem SAS (Account Key?), usa ABFSS
     TARGET_ABFSS_PATH = f"abfss://{TARGET_CONTAINER}@{TARGET_ACCOUNT}.dfs.core.windows.net"
 
-# Source:
-# Força WASBS se estiver usando SAS no Source também, para evitar inconsistências
-if SOURCE_SAS:
-    spark.conf.set(f"fs.azure.sas.{SOURCE_CONTAINER}.{SOURCE_ACCOUNT}.blob.core.windows.net", SOURCE_SAS)
-    SOURCE_ABFSS_PATH = f"wasbs://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.blob.core.windows.net"
-else:
-    SOURCE_ABFSS_PATH = f"abfss://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.dfs.core.windows.net"
+SOURCE_ABFSS_PATH = f"abfss://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.dfs.core.windows.net"
 
 # =============================================================================
 # CARREGAMENTO DE SCHEMA
