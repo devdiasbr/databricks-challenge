@@ -456,8 +456,10 @@ def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logg
                 spark_path = file_info['path']
                 
                 # [DATABRICKS COMPATIBILITY]
-                # Se estiver no Databricks, mover arquivo local (/tmp) para DBFS para que Spark Executors tenham acesso
-                if "DATABRICKS_RUNTIME_VERSION" in os.environ:
+                # Se estiver no Databricks (Env Var ou /dbfs), mover arquivo local (/tmp) para DBFS
+                is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")
+                
+                if is_databricks:
                     logger.info(f"[{entity_name}] [Databricks] Movendo arquivo para DBFS para leitura Spark...")
                     try:
                         fname = os.path.basename(spark_path)
@@ -467,7 +469,8 @@ def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logg
                         try:
                             from pyspark.dbutils import DBUtils
                             dbutils = DBUtils(spark)
-                            dbutils.fs.cp(f"file:{spark_path}", dbfs_bridge_path)
+                            src_path_with_schema = f"file:{spark_path}" if not spark_path.startswith("file:") else spark_path
+                            dbutils.fs.cp(src_path_with_schema, dbfs_bridge_path)
                             spark_path = dbfs_bridge_path
                         except ImportError:
                             # Fallback para /dbfs (Mount)
@@ -484,7 +487,8 @@ def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logg
                     except Exception as e:
                         logger.warning(f"[{entity_name}] Falha ao mover para DBFS: {e}. Tentando file://")
                         spark_path = f"file://{spark_path}"
-
+                
+                logger.info(f"[{entity_name}] Reading with Spark from: {spark_path}")
                 df_raw = spark.read.format(file_info['format']).options(**file_info['options']).load(spark_path)
                 
                 # 3. Rename/Select Columns

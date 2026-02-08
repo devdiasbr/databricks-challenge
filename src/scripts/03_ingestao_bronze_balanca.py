@@ -320,9 +320,10 @@ for full_path, name in pbar:
         spark_path = file_info['path']
         
         # [DATABRICKS COMPATIBILITY]
-        # Se estiver no Databricks, o Spark (Executors) não vê o disco local do Driver (/tmp).
-        # Precisamos mover o arquivo para o DBFS ou usar dbfs:/ se acessível.
-        if "DATABRICKS_RUNTIME_VERSION" in os.environ:
+        # Se estiver no Databricks (Env Var ou presença de /dbfs), o Spark (Executors) não vê o disco local do Driver (/tmp).
+        is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")
+        
+        if is_databricks:
             logger.info(f"   [Databricks] Preparando arquivo para leitura distribuída: {name}")
             try:
                 fname = os.path.basename(spark_path)
@@ -333,7 +334,9 @@ for full_path, name in pbar:
                     from pyspark.dbutils import DBUtils
                     dbutils = DBUtils(spark)
                     # Copia "file:/" (local driver) -> "dbfs:/" (distribuído)
-                    dbutils.fs.cp(f"file:{spark_path}", dbfs_bridge_path)
+                    # Adiciona file: apenas se não tiver schema
+                    src_path_with_schema = f"file:{spark_path}" if not spark_path.startswith("file:") else spark_path
+                    dbutils.fs.cp(src_path_with_schema, dbfs_bridge_path)
                     spark_path = dbfs_bridge_path
                     # logger.info(f"   [Databricks] Arquivo movido via dbutils para: {spark_path}")
                 except ImportError:
@@ -350,7 +353,8 @@ for full_path, name in pbar:
             except Exception as e:
                 logger.warning(f"   [Databricks] Falha na ponte Local-DBFS ({e}). Tentando leitura direta.")
                 spark_path = f"file://{spark_path}"
-
+        
+        logger.info(f"   Lendo arquivo em: {spark_path}")
         df_temp = spark.read.format(file_info['format']).options(**file_info['options']).load(spark_path)
         
         # Aplicar mapeamento de schema se existir
