@@ -1,6 +1,6 @@
 # 📊 Projeto Integrado - Pipeline de Dados (CNPJ & Balança Comercial)
 
-![Status](https://img.shields.io/badge/Status-Em_Desenvolvimento-yellow)
+![Status](https://img.shields.io/badge/Status-Concluído-brightgreen)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![Spark](https://img.shields.io/badge/Apache_Spark-3.3.2-orange)
 ![Azure](https://img.shields.io/badge/Cloud-Azure_Blob_Storage-0078D4)
@@ -17,7 +17,7 @@ O projeto segue o padrão Medallion para garantir qualidade e governança dos da
 graph LR
     A["Landing Zone<br/>(Blob Storage)"] -->|Ingestão Raw| B[("Bronze Layer<br/>Delta/Parquet")]
     B -->|Limpeza & Schema| C[("Silver Layer<br/>Delta Lake")]
-    C -->|Agregações| D[("Gold Layer<br/>Refined Tables")]
+    C -->|Modelagem Star Schema| D[("Gold Layer<br/>Refined Tables")]
     
     subgraph "Fontes de Dados"
         CNPJ["Arquivos CNPJ<br/>(ZIP/CSV)"]
@@ -31,47 +31,34 @@ graph LR
 1.  **Landing Zone**: Dados brutos hospedados no Azure Blob Storage (containers `landing...`).
 2.  **Bronze Layer**: Dados ingeridos "as-is", convertidos para Delta/Parquet para performance, mantendo histórico.
 3.  **Silver Layer**: Dados limpos, tipados (Schema Enforcement), deduplicados e enriquecidos com regras de negócio.
-4.  **Gold Layer**: (Roadmap) Dados agregados prontos para consumo por ferramentas de BI (Power BI, Tableau).
+4.  **Gold Layer**: Dados modelados em **Star Schema** (Fatos e Dimensões) otimizados para Analytics e BI.
 
 ---
 
 ## 🚀 Funcionalidades e Diferenciais
 
 *   **Ingestão Híbrida Inteligente**: Os scripts detectam automaticamente se estão rodando no **Databricks** ou **Localmente**, ajustando caminhos e métodos de autenticação.
-*   **Orquestração Centralizada**: Um único ponto de entrada (`00_setup.py`) gerencia dependências e a execução sequencial do pipeline.
-*   **Observabilidade**: Logs detalhados são enviados para o console (com barras de progresso `tqdm`) e persistidos automaticamente no container `$logs` do Azure.
+*   **Arquitetura Medallion Completa**: Pipeline implementado de ponta a ponta (Raw -> Trusted -> Refined).
+*   **Observabilidade**: Logs detalhados são enviados para o console (com barras de progresso `tqdm`) e persistidos.
 *   **Suporte a Windows**: O projeto baixa e configura automaticamente o `winutils.exe` (Hadoop binaries) para permitir a execução do Spark no Windows sem dores de cabeça.
-*   **Atomicidade**: Uso de operações atômicas do Delta Lake (`overwrite` mode) para evitar estados inconsistentes e erros de `DirectoryIsNotEmpty`.
+*   **Atomicidade**: Uso de operações atômicas do Delta Lake (`overwrite` mode) e comandos `OPTIMIZE/VACUUM` para performance.
 
 ---
-
-## 📚 Documentação Completa
-
-A documentação detalhada do projeto foi movida para a pasta `docs/manual/`. Consulte os guias abaixo para mais informações:
-
-1.  [Visão Geral](docs/manual/01_visao_geral.md)
-2.  [Configuração do Ambiente](docs/manual/02_configuracao_ambiente.md)
-3.  [Execução do Pipeline](docs/manual/03_execucao_pipeline.md)
-4.  [Arquitetura Detalhada](docs/manual/04_arquitetura_detalhada.md)
-5.  [Guia de Troubleshooting](docs/manual/05_guia_troubleshooting.md)
 
 ## 📂 Estrutura do Projeto
 
 ```text
 /
-├── docs/                       # Documentação
-│   ├── manual/                 # 📘 Manuais e guias do projeto
-│   └── schemas/                # 📋 Schemas JSON (CNPJ, Balança)
 ├── hadoop/                     # Binários do Hadoop (winutils) gerenciados automaticamente
 ├── src/
-│   ├── scripts/                # Scripts do Pipeline
-│   │   ├── 00_setup.py         # 🎮 Orchestrator: Gerencia todo o fluxo
-│   │   ├── 01_listagem_*.py    # 🔍 Diagnóstico: Lista arquivos na origem para conferência
-│   │   ├── 02_setup_*.py       # 🛠️ Setup: Cria e valida containers de destino (Raw/Trusted)
+│   ├── scripts/                # Scripts do Pipeline (Execução Sequencial)
+│   │   ├── 01_listagem_*.py    # 🔍 Diagnóstico: Lista arquivos na origem
+│   │   ├── 02_setup_*.py       # 🛠️ Setup: Cria e valida containers de destino (Raw/Trusted/Refined)
 │   │   ├── 03_ingestao_*.py    # 📥 Bronze: Ingestão Balança Comercial
 │   │   ├── 04_ingestao_*.py    # 📥 Bronze: Ingestão CNPJ (extração de ZIPs)
 │   │   ├── 05_transf_*.py      # 🔄 Silver: Transformação Balança (Limpeza, Tipagem)
-│   │   └── 06_transf_*.py      # 🔄 Silver: Transformação CNPJ (Schema Mapping)
+│   │   ├── 06_transf_*.py      # 🔄 Silver: Transformação CNPJ (Schema Mapping)
+│   │   └── 07_transf_*.py      # 🏆 Gold: Modelagem Dimensional (Star Schema)
 │   ├── utils/                  # Bibliotecas compartilhadas
 │   │   ├── config.py           # Gerenciamento de configuração e variáveis de ambiente
 │   │   ├── logging_utils.py    # Handler de logs customizado
@@ -98,18 +85,24 @@ AZURE_STORAGE_SAS_TOKEN_BALANCA="?sv=..."
 # ... (ver .env.example para lista completa)
 ```
 
-### 3. Execução
-O modo mais fácil é usar o orquestrador:
+### 3. Execução do Pipeline
+Os scripts devem ser executados sequencialmente para garantir a dependência dos dados:
 
 ```bash
-# Executa tudo (Instalação + Bronze + Silver)
-python src/scripts/00_setup.py
+# 1. Diagnóstico e Setup
+python src/scripts/01_listagem_arquivos_azure.py
+python src/scripts/02_setup_validacao_targets.py
 
-# Se já instalou as libs, pule a etapa de deps:
-python src/scripts/00_setup.py --skip-deps
+# 2. Camada Bronze (Ingestão)
+python src/scripts/03_ingestao_bronze_balanca.py
+python src/scripts/04_ingestao_bronze_cnpj.py
 
-# Para rodar apenas a camada Silver (ex: reprocessamento):
-python src/scripts/00_setup.py --skip-deps --skip-bronze
+# 3. Camada Silver (Transformação)
+python src/scripts/05_transformacao_silver_balanca.py
+python src/scripts/06_transformacao_silver_cnpj.py
+
+# 4. Camada Gold (Refinamento)
+python src/scripts/07_transformacao_gold.py
 ```
 
 ---
@@ -117,7 +110,7 @@ python src/scripts/00_setup.py --skip-deps --skip-bronze
 ## 🧠 Decisões de Design
 
 ### Por que Delta Lake?
-Utilizamos Delta Lake na camada Silver para garantir **ACID Transactions**. Isso nos permite sobrescrever dados de forma segura (`overwriteSchema`) sem corromper leituras concorrentes e sem precisar deletar diretórios manualmente, prevenindo erros de `DirectoryIsNotEmpty`.
+Utilizamos Delta Lake nas camadas Silver e Gold para garantir **ACID Transactions**. Isso nos permite sobrescrever dados de forma segura (`overwriteSchema`) sem corromper leituras concorrentes e sem precisar deletar diretórios manualmente.
 
 ### Tratamento de Arquivos ZIP (CNPJ)
 Os dados do CNPJ vêm em arquivos ZIP massivos contendo CSVs. Nossa estratégia de ingestão (Script 04):
