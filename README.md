@@ -11,13 +11,13 @@ Este projeto implementa um pipeline de engenharia de dados robusto e escalável 
 
 ## 📑 Índice
 
-*   [🏗️ Arquitetura e Fluxo de Dados](#-arquitetura-e-fluxo-de-dados)
-*   [🚀 Funcionalidades e Diferenciais](#-funcionalidades-e-diferenciais)
-*   [⚙️ Configurações de Otimização (Delta Lake)](#-configurações-de-otimização-delta-lake)
-*   [📂 Estrutura do Projeto](#-estrutura-do-projeto)
-*   [🛠️ Como Executar](#-como-executar)
-*   [🧠 Decisões de Design](#-decisões-de-design)
-*   [🔧 Troubleshooting](#-troubleshooting)
+*   [🏗️ Arquitetura e Fluxo de Dados](#arquitetura-e-fluxo-de-dados)
+*   [🚀 Funcionalidades e Diferenciais](#funcionalidades-e-diferenciais)
+*   [⚙️ Configurações de Otimização (Delta Lake)](#configurações-de-otimização-delta-lake)
+*   [📂 Estrutura do Projeto](#estrutura-do-projeto)
+*   [🛠️ Como Executar](#como-executar)
+*   [🧠 Decisões de Design](#decisões-de-design)
+*   [🔧 Troubleshooting](#troubleshooting)
 
 ---
 
@@ -33,6 +33,7 @@ Para detalhes aprofundados sobre cada aspecto do projeto, consulte o **Manual do
 | [03. Execução do Pipeline](docs/manual/03_execucao_pipeline.md) | Instruções detalhadas para rodar os scripts de ingestão e transformação. |
 | [04. Arquitetura Detalhada](docs/manual/04_arquitetura_detalhada.md) | Diagramas e explicações técnicas sobre as camadas Bronze, Silver e Gold. |
 | [05. Troubleshooting](docs/manual/05_guia_troubleshooting.md) | Soluções para erros comuns e problemas conhecidos. |
+| [06. Dicionário de Dados](docs/manual/06_dicionario_dados.md) | Detalhamento das tabelas e colunas da camada Gold (Refined). |
 
 ---
 
