@@ -1,4 +1,11 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # Ingestão Bronze: Balança Comercial
+# MAGIC 
+# MAGIC Ingestão de dados da Balança Comercial para a camada Bronze (Raw -> Bronze).
+
+# COMMAND ----------
+
 import os
 import sys
 import json
@@ -55,6 +62,8 @@ if not logger.handlers:
 # =============================================================================
 # WINDOWS HADOOP WORKAROUND
 # =============================================================================
+# COMMAND ----------
+
 if os.name == 'nt':
     # Define HADOOP_HOME apontando para a pasta hadoop na raiz do projeto
     hadoop_home = os.path.join(project_root, "hadoop")
@@ -131,6 +140,8 @@ spark = get_spark_session()
 # CONFIGURAÇÕES DE STORAGE E ACESSO (Via config.py)
 # =============================================================================
 
+# COMMAND ----------
+
 # Configuração para evitar erro de "Failed to get primary group" no Windows
 spark.conf.set("fs.azure.enable.check.access", "false")
 
@@ -178,6 +189,8 @@ SOURCE_ABFSS_PATH = f"abfss://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.dfs.core.windo
 # =============================================================================
 # CARREGAMENTO DE SCHEMA
 # =============================================================================
+# COMMAND ----------
+
 schema_path = os.path.join(project_root, 'docs', 'schemas', 'balanca_schema.json')
 try:
     with open(schema_path, 'r', encoding='utf-8') as f:
@@ -186,6 +199,8 @@ try:
 except Exception as e:
     logger.error(f"Erro ao carregar schema: {e}")
     full_schema = {}
+
+# COMMAND ----------
 
 def get_mapping_for_file(filename):
     """

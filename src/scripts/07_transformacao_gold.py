@@ -1,4 +1,11 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # Modelagem Gold: Star Schema
+# MAGIC 
+# MAGIC Criação de dimensões e tabelas fato para análise (Silver -> Gold).
+
+# COMMAND ----------
+
 import os
 import sys
 import logging
@@ -408,6 +415,8 @@ def processar_gold():
 
     spark.stop()
     logger.info("🏁 Processamento Gold Finalizado.")
+
+# COMMAND ----------
 
 if __name__ == "__main__":
     processar_gold()

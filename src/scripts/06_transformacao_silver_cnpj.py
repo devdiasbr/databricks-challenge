@@ -1,4 +1,9 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # Transformação Silver: Dados CNPJ
+# MAGIC 
+# MAGIC Aplicação de schema, limpeza e padronização dos dados de CNPJ (Bronze -> Silver).
+
 import os
 import sys
 import json
@@ -120,6 +125,8 @@ def configure_azure_access(spark):
             
             logger.info(f"✅ Configurado acesso SAS para {account}/{layer}")
 
+# COMMAND ----------
+
 def list_raw_folders_cnpj():
     """Lista as pastas CNPJ dentro da pasta 'cnpj' no container RAW."""
     raw_container_url = config.get_target_url("raw")
@@ -150,6 +157,8 @@ def list_raw_folders_cnpj():
     
     return sorted(list(folders))
 
+# COMMAND ----------
+
 def delete_virtual_directory(container_url, folder_name):
     """
     Remove todos os blobs que começam com o folder_name para simular overwrite de diretório.
@@ -174,6 +183,8 @@ def delete_virtual_directory(container_url, folder_name):
     except Exception as e:
         logger.warning(f"  ⚠️ Erro ao tentar limpar diretório {folder_name}: {e}")
 
+# COMMAND ----------
+
 def load_schema(schema_path):
     """Carrega o arquivo JSON de schema (tenta UTF-8, fallback para Latin1)."""
     try:
@@ -188,6 +199,8 @@ def load_schema(schema_path):
     except Exception as e:
         logger.error(f"❌ Erro ao carregar schema JSON de {schema_path}: {e}")
         return {}
+
+# COMMAND ----------
 
 def get_schema_mapping(folder_name, schema):
     """
@@ -326,6 +339,8 @@ def process_cnpj():
         spark.stop()
     except Exception:
         pass
+
+# COMMAND ----------
 
 if __name__ == "__main__":
     process_cnpj()

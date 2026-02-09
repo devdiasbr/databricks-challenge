@@ -1,4 +1,9 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # Transformação Silver: Balança Comercial
+# MAGIC 
+# MAGIC Limpeza, padronização e tipagem dos dados da Balança Comercial (Bronze -> Silver).
+
 import os
 import sys
 import json
@@ -145,6 +150,8 @@ def list_raw_folders(prefix="balancacomercial/"):
     
     return sorted(list(folders))
 
+# COMMAND ----------
+
 def delete_virtual_directory(container_url, folder_name):
     """
     Remove todos os blobs que começam com o folder_name para simular overwrite de diretório.
@@ -171,6 +178,8 @@ def delete_virtual_directory(container_url, folder_name):
             
     except Exception as e:
         logger.warning(f"  ⚠️ Erro ao tentar limpar diretório {folder_name}: {e}")
+
+# COMMAND ----------
 
 def load_schema(schema_path):
     """Carrega o arquivo JSON de schema (tenta UTF-8, fallback para Latin1)."""
@@ -359,6 +368,8 @@ def process_balanca_comercial():
         spark.stop()
     except Exception:
         pass
+
+# COMMAND ----------
 
 if __name__ == "__main__":
     process_balanca_comercial()

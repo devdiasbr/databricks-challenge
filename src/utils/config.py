@@ -120,10 +120,7 @@ STRUCTURE = {
         "containers": ["raw"],
         "folders": {
             "raw": [
-                "balancacomercial",
-                "empresas", "estabelecimentos", "socios", "cnaes", 
-                "municipios", "naturezas", "paises", "simples", 
-                "motivos", "qualificacoes", "outros"
+                "balancacomercial", "cnpj"
             ]
         },
         "description": "Camada Raw (Bronze)",

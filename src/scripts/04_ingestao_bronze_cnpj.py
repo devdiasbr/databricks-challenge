@@ -1,4 +1,9 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # Ingestão Bronze: Dados Públicos CNPJ
+# MAGIC 
+# MAGIC Ingestão e extração de dados públicos do CNPJ (ZIPs) para a camada Bronze.
+
 import os
 import sys
 import logging
@@ -113,6 +118,8 @@ log4j = spark._jvm.org.apache.log4j
 log4j.LogManager.getLogger("org.apache.spark").setLevel(log4j.Level.WARN)
 log4j.LogManager.getLogger("org.apache.hadoop").setLevel(log4j.Level.WARN)
 log4j.LogManager.getLogger("py4j").setLevel(log4j.Level.ERROR)
+
+# COMMAND ----------
 
 # DBUtils Mock
 try:
@@ -328,6 +335,8 @@ def setup_logging(pipeline_run_id: str):
     logger.addHandler(blob_handler)
     
     return logger, blob_handler
+
+# COMMAND ----------
 
 # Extraction Logic
 def download_data(logger):
@@ -603,6 +612,8 @@ def run_pipeline():
             
     logger.info("PIPELINE COMPLETED")
     blob_handler.flush_to_blob(f"{LOGS_ABFSS_PATH}/cnpj_pipeline_{pipeline_run_id}.log")
+
+# COMMAND ----------
 
 if __name__ == "__main__":
     run_pipeline()

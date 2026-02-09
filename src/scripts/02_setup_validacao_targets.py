@@ -1,4 +1,11 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # Setup e Validação de Ambientes
+# MAGIC 
+# MAGIC Cria containers necessários e valida a estrutura de diretórios no Azure Blob Storage.
+
+# COMMAND ----------
+
 import os
 import sys
 
@@ -40,6 +47,8 @@ def ensure_container_accessible(container_url, container_name):
              print("       (Verifique se o token SAS expirou ou está incorreto)")
         return None
 
+# COMMAND ----------
+
 def setup_and_validate_targets():
     """Valida a estrutura de pastas e containers de destino (Raw, Trusted, Refined)."""
     
@@ -75,19 +84,23 @@ def setup_and_validate_targets():
                 if expected_folders:
                     print(f"    📂 Verificando subpastas esperadas em '{container_name}':")
                     try:
-                        existing_blobs = list(container_client.list_blobs())
-                        existing_prefixes = set()
-                        for b in existing_blobs:
-                            if '/' in b.name:
-                                existing_prefixes.add(b.name.split('/')[0])
-                                
                         for folder in expected_folders:
-                            if folder in existing_prefixes:
+                            # Verifica se existe algum blob com o prefixo da pasta
+                            # Adiciona '/' ao final para garantir que é um diretório virtual
+                            prefix = folder if folder.endswith('/') else f"{folder}/"
+                            
+                            # Usa name_starts_with para evitar listar todo o container
+                            # Tenta pegar apenas 1 item para confirmar existência
+                            blob_iterator = container_client.list_blobs(name_starts_with=prefix, results_per_page=1)
+                            exists = next(blob_iterator, None) is not None
+                            
+                            if exists:
                                 print(f"      🔹 {folder}/ (Existe)")
                             else:
                                 print(f"      🔸 {folder}/ (Pendente - será criado na ingestão)")
+                                
                     except Exception as e:
-                         print(f"      ⚠️ Não foi possível listar pastas: {e}")
+                         print(f"      ⚠️ Erro ao verificar pastas: {e}")
 
     print("\n✅ Validação Concluída.")
 
