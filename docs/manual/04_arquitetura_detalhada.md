@@ -110,26 +110,47 @@ erDiagram
 
 ## 🔄 Fluxo de Dados
 
-```mermaid
-graph TD
-    LZ[Landing Zone] -->|Ingestão| BR[Bronze]
-    BR -->|Leitura Spark| DF[DataFrame]
-    DF -->|Transformação| SL[Silver]
-    SL -->|Modelagem| GD[Gold]
-    
-    subgraph "Detalhe Silver"
-        DF --> CLEAN[Limpeza Strings]
-        CLEAN --> TYPE[Tipagem Forte]
-        TYPE --> SCHEMA[Validação Schema]
-        SCHEMA --> WRITE[Escrita Delta]
-    end
+O diagrama abaixo ilustra a jornada do dado desde a ingestão até o consumo, destacando as etapas de transformação e validação.
 
-    subgraph "Detalhe Gold"
-        SL --> DIMS[Criação Dimensões]
-        SL --> FATO[Criação Fato]
-        DIMS --> JOIN[Star Schema]
+> **Nota Visual**: Embora o Mermaid não suporte animação nativa em Markdown, o fluxo foi estilizado para diferenciar claramente Armazenamento (Azul), Processamento (Laranja) e o Produto Final (Dourado/Amarelo).
+
+```mermaid
+flowchart LR
+    %% Definição de Estilos (Classes)
+    classDef storage fill:#e1f5fe,stroke:#01579b,stroke-width:2px,rx:5,ry:5;
+    classDef process fill:#fff3e0,stroke:#e65100,stroke-width:2px,stroke-dasharray: 5 5,rx:5,ry:5;
+    classDef gold fill:#fff9c4,stroke:#fbc02d,stroke-width:3px,rx:10,ry:10;
+    classDef start fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,rx:10,ry:10;
+
+    %% Nós Principais
+    LZ[Landing Zone]:::start -->|Ingestão Raw| BR[Bronze Layer]:::storage
+    BR -->|Leitura Spark| DF(DataFrame Memória):::process
+    
+    %% Subgrafo Silver
+    subgraph Silver_Process [Processamento Silver]
+        direction TB
+        DF --> CLEAN[Limpeza Strings]:::process
+        CLEAN --> TYPE[Tipagem Forte]:::process
+        TYPE --> SCHEMA[Validação Schema]:::process
+    end
+    
+    SCHEMA -->|Escrita Delta| SL[Silver Layer]:::storage
+    
+    %% Subgrafo Gold
+    subgraph Gold_Process [Modelagem Gold]
+        direction TB
+        SL --> DIMS[Dimensões]:::process
+        SL --> FATO[Fatos]:::process
+        DIMS --> JOIN{Star Schema}:::gold
         FATO --> JOIN
     end
+
+    JOIN -->|Persistência Final| GD[Gold Layer]:::gold
+    
+    %% Estilização das Conexões (Links)
+    linkStyle default stroke:#455a64,stroke-width:2px;
+    linkStyle 0,1,5 stroke:#0277bd,stroke-width:3px;
+    linkStyle 8 stroke:#fbc02d,stroke-width:3px;
 ```
 
 ## 🔐 Segurança
