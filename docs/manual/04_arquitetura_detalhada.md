@@ -1,3 +1,7 @@
+[Escopo](./00_escopo_e_cronograma.md) | [Visão Geral](./01_visao_geral.md) | [Configuração](./02_configuracao_ambiente.md) | [Execução](./03_execucao_pipeline.md) | **Arquitetura** | [Troubleshooting](./05_guia_troubleshooting.md)
+
+---
+
 # 4. Arquitetura Detalhada
 
 ## 📐 Padrão Medallion

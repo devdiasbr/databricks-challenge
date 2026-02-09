@@ -1,3 +1,7 @@
+[Escopo](./00_escopo_e_cronograma.md) | [Visão Geral](./01_visao_geral.md) | [Configuração](./02_configuracao_ambiente.md) | **Execução** | [Arquitetura](./04_arquitetura_detalhada.md) | [Troubleshooting](./05_guia_troubleshooting.md)
+
+---
+
 # 3. Execução do Pipeline
 
 O pipeline é composto por scripts numerados sequencialmente em `src/scripts/`.

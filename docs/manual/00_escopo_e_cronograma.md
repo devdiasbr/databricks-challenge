@@ -1,3 +1,7 @@
+**Escopo** | [Visão Geral](./01_visao_geral.md) | [Configuração](./02_configuracao_ambiente.md) | [Execução](./03_execucao_pipeline.md) | [Arquitetura](./04_arquitetura_detalhada.md) | [Troubleshooting](./05_guia_troubleshooting.md)
+
+---
+
 # Projeto Integrado - Escopo e Cronograma
 
 Este documento detalha o escopo, requisitos e o cronograma para o desenvolvimento do Projeto Integrado.

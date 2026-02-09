@@ -1,3 +1,7 @@
+[Escopo](./00_escopo_e_cronograma.md) | **Visão Geral** | [Configuração](./02_configuracao_ambiente.md) | [Execução](./03_execucao_pipeline.md) | [Arquitetura](./04_arquitetura_detalhada.md) | [Troubleshooting](./05_guia_troubleshooting.md)
+
+---
+
 # 1. Visão Geral do Projeto
 
 ## 🎯 Objetivo

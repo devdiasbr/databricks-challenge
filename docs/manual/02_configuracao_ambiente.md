@@ -1,3 +1,7 @@
+[Escopo](./00_escopo_e_cronograma.md) | [Visão Geral](./01_visao_geral.md) | **Configuração** | [Execução](./03_execucao_pipeline.md) | [Arquitetura](./04_arquitetura_detalhada.md) | [Troubleshooting](./05_guia_troubleshooting.md)
+
+---
+
 # 2. Configuração do Ambiente
 
 ## 📋 Pré-requisitos
