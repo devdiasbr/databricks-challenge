@@ -149,10 +149,8 @@ flowchart TD
         direction TB
 
         SPACE1[ ]:::spacer
-        SPACE2[ ]:::spacer
 
-        SPACE1 --> SPACE2
-        SPACE2 --> DIMS
+        SPACE1 --> DIMS
         SPACE2 --> FACT
 
         SL -->|Leitura Dimensões| DIMS[Dimensões]:::process
