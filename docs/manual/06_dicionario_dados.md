@@ -13,7 +13,6 @@ Este documento descreve detalhadamente as tabelas e colunas disponíveis na cama
 3.  [Dimensão NCM (`dim_ncm`)](#3-dimensão-ncm-dim_ncm)
 4.  [Dimensão Localidade (`dim_localidade`)](#4-dimensão-localidade-dim_localidade)
 5.  [Dimensão Via Transporte (`dim_via_transporte`)](#5-dimensão-via-transporte-dim_via_transporte)
-6.  [Catálogo de Dados e Exemplos de Uso](#6-catálogo-de-dados-e-exemplos-de-uso)
 
 ---
 
@@ -38,6 +37,27 @@ Tabela central que unifica transações de Importação e Exportação.
 | `flag_exportacao` | `INT` | - | Flag binária (1=Sim, 0=Não) para facilitar somas. | `1` |
 | `flag_importacao` | `INT` | - | Flag binária (1=Sim, 0=Não) para facilitar somas. | `0` |
 | `dt_atualizacao` | `TIMESTAMP` | - | Data e hora da última atualização do registro. | `2024-02-09 10:00:00` |
+
+### Exemplo de Uso: Balança Comercial Mensal (Saldo)
+
+Calcula o total exportado, importado e o saldo da balança comercial (Exportações - Importações) agrupado por mês.
+
+```sql
+SELECT 
+    d.ano,
+    d.mes,
+    d.nome_mes,
+    -- Soma condicional usando as flags para performance
+    SUM(CASE WHEN f.flag_exportacao = 1 THEN f.valor_fob ELSE 0 END) as total_exportacao,
+    SUM(CASE WHEN f.flag_importacao = 1 THEN f.valor_fob ELSE 0 END) as total_importacao,
+    (SUM(CASE WHEN f.flag_exportacao = 1 THEN f.valor_fob ELSE 0 END) - 
+     SUM(CASE WHEN f.flag_importacao = 1 THEN f.valor_fob ELSE 0 END)) as saldo_comercial
+FROM gold.ft_balanco_comercial f
+JOIN gold.dim_data d ON f.sk_data = d.sk_data
+WHERE d.ano >= 2024
+GROUP BY d.ano, d.mes, d.nome_mes
+ORDER BY d.ano DESC, d.mes DESC;
+```
 
 ---
 
@@ -70,61 +90,7 @@ Detalhes sobre os produtos baseados na Nomenclatura Comum do Mercosul (NCM). Enr
 | `descricao_cnae` | `STRING` | - | Descrição da atividade econômica (CNAE). | `Criação de bovinos para corte` |
 | `setor_economico` | `STRING` | - | Categorização macro do setor (ex: Agropecuária, Indústria). | `Agropecuária` |
 
----
-
-## 4. Dimensão Localidade (`dim_localidade`)
-
-Normalização geográfica combinando Países e Unidades Federativas (UFs).
-*   **Lógica da Chave**: `(codigo_pais * 1000) + ascii(uf)`.
-
-| Coluna | Tipo | Chave | Descrição | Exemplo |
-| :--- | :--- | :---: | :--- | :--- |
-| `sk_localidade` | `BIGINT` | PK | Chave primária composta. | `760083` |
-| `pais` | `STRING` | - | Nome do país (destino ou origem). | `Brasil` |
-| `uf` | `STRING` | - | Sigla da Unidade Federativa (apenas para Brasil, senão 'XX'). | `SP` |
-| `regiao` | `STRING` | - | Região geográfica do Brasil (Norte, Sul, etc.) ou 'Internacional'. | `Sudeste` |
-| `bloco_pais` | `STRING` | - | Bloco econômico ao qual o país pertence (ex: Mercosul, UE). | `Mercosul` |
-
----
-
-## 5. Dimensão Via Transporte (`dim_via_transporte`)
-
-Modal logístico utilizado na operação.
-
-| Coluna | Tipo | Chave | Descrição | Exemplo |
-| :--- | :--- | :---: | :--- | :--- |
-| `sk_via_transporte` | `BIGINT` | PK | Código da via (mesmo que Siscomex). | `1` |
-| `codigo_via` | `INT` | - | Código original da via. | `1` |
-| `descricao_via` | `STRING` | - | Descrição do modal (Marítima, Aérea, Rodoviária, etc.). | `MARITIMA` |
-
----
-
-## 6. Exemplos de Uso
-
-Esta seção fornece exemplos práticos de como explorar os dados da camada Gold utilizando SQL. Estes exemplos demonstram o poder do modelo **Star Schema** para responder perguntas de negócio.
-
-### 6.1. Balança Comercial Mensal (Saldo)
-
-Calcula o total exportado, importado e o saldo da balança comercial (Exportações - Importações) agrupado por mês.
-
-```sql
-SELECT 
-    d.ano,
-    d.mes,
-    d.nome_mes,
-    -- Soma condicional usando as flags para performance
-    SUM(CASE WHEN f.flag_exportacao = 1 THEN f.valor_fob ELSE 0 END) as total_exportacao,
-    SUM(CASE WHEN f.flag_importacao = 1 THEN f.valor_fob ELSE 0 END) as total_importacao,
-    (SUM(CASE WHEN f.flag_exportacao = 1 THEN f.valor_fob ELSE 0 END) - 
-     SUM(CASE WHEN f.flag_importacao = 1 THEN f.valor_fob ELSE 0 END)) as saldo_comercial
-FROM gold.ft_balanco_comercial f
-JOIN gold.dim_data d ON f.sk_data = d.sk_data
-WHERE d.ano >= 2024
-GROUP BY d.ano, d.mes, d.nome_mes
-ORDER BY d.ano DESC, d.mes DESC;
-```
-
-### 6.2. Top 10 Produtos (NCM) Exportados por Valor
+### Exemplo de Uso: Top 10 Produtos Exportados
 
 Identifica quais produtos geraram maior receita de exportação em um determinado período.
 
@@ -144,7 +110,22 @@ ORDER BY valor_total_exportado DESC
 LIMIT 10;
 ```
 
-### 6.3. Análise de Parceiros Comerciais (Importação por País)
+---
+
+## 4. Dimensão Localidade (`dim_localidade`)
+
+Normalização geográfica combinando Países e Unidades Federativas (UFs).
+*   **Lógica da Chave**: `(codigo_pais * 1000) + ascii(uf)`.
+
+| Coluna | Tipo | Chave | Descrição | Exemplo |
+| :--- | :--- | :---: | :--- | :--- |
+| `sk_localidade` | `BIGINT` | PK | Chave primária composta. | `760083` |
+| `pais` | `STRING` | - | Nome do país (destino ou origem). | `Brasil` |
+| `uf` | `STRING` | - | Sigla da Unidade Federativa (apenas para Brasil, senão 'XX'). | `SP` |
+| `regiao` | `STRING` | - | Região geográfica do Brasil (Norte, Sul, etc.) ou 'Internacional'. | `Sudeste` |
+| `bloco_pais` | `STRING` | - | Bloco econômico ao qual o país pertence (ex: Mercosul, UE). | `Mercosul` |
+
+### Exemplo de Uso: Análise de Parceiros Comerciais (Importação)
 
 Analisa de quais países o Brasil mais importa mercadorias.
 
@@ -161,23 +142,7 @@ GROUP BY l.pais, l.bloco_pais
 ORDER BY valor_total_importado DESC;
 ```
 
-### 6.4. Movimentação por Via de Transporte (Modal Logístico)
-
-Compara o volume financeiro e físico movimentado por cada modal (Marítimo, Aéreo, Rodoviário, etc.).
-
-```sql
-SELECT 
-    v.descricao_via,
-    f.tipo_movimentacao,
-    SUM(f.valor_fob) as valor_total,
-    SUM(f.kg_liquido) as peso_total_kg
-FROM gold.ft_balanco_comercial f
-JOIN gold.dim_via_transporte v ON f.sk_via_transporte = v.sk_via_transporte
-GROUP BY v.descricao_via, f.tipo_movimentacao
-ORDER BY valor_total DESC;
-```
-
-### 6.5. Evolução Trimestral por Estado (UF)
+### Exemplo de Uso: Evolução Trimestral por Estado (UF)
 
 Monitora o desempenho das exportações de um estado específico ao longo dos trimestres.
 
@@ -194,4 +159,32 @@ WHERE l.uf = 'SP'        -- Filtro por Estado (São Paulo)
   AND f.flag_exportacao = 1
 GROUP BY l.uf, d.ano, d.trimestre
 ORDER BY d.ano, d.trimestre;
+```
+
+---
+
+## 5. Dimensão Via Transporte (`dim_via_transporte`)
+
+Modal logístico utilizado na operação.
+
+| Coluna | Tipo | Chave | Descrição | Exemplo |
+| :--- | :--- | :---: | :--- | :--- |
+| `sk_via_transporte` | `BIGINT` | PK | Código da via (mesmo que Siscomex). | `1` |
+| `codigo_via` | `INT` | - | Código original da via. | `1` |
+| `descricao_via` | `STRING` | - | Descrição do modal (Marítima, Aérea, Rodoviária, etc.). | `MARITIMA` |
+
+### Exemplo de Uso: Movimentação por Via de Transporte
+
+Compara o volume financeiro e físico movimentado por cada modal (Marítimo, Aéreo, Rodoviário, etc.).
+
+```sql
+SELECT 
+    v.descricao_via,
+    f.tipo_movimentacao,
+    SUM(f.valor_fob) as valor_total,
+    SUM(f.kg_liquido) as peso_total_kg
+FROM gold.ft_balanco_comercial f
+JOIN gold.dim_via_transporte v ON f.sk_via_transporte = v.sk_via_transporte
+GROUP BY v.descricao_via, f.tipo_movimentacao
+ORDER BY valor_total DESC;
 ```
