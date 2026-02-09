@@ -125,7 +125,6 @@ flowchart TD
     LZ[Landing Zone]:::start -->|Ingestão Raw| BR[(Bronze Layer)]:::storage
     
     subgraph Silver_Stage [Processamento Silver]
-        direction TB
         BR -->|Leitura Spark| DF(DataFrame Memória):::process
         DF --> CLEAN[Limpeza Strings]:::process
         CLEAN --> TYPE[Tipagem Forte]:::process
@@ -134,9 +133,9 @@ flowchart TD
     end
 
     subgraph Gold_Stage [Modelagem Gold]
-        direction TB
         SL -->|Leitura Otimizada| DIMS[Dimensões]:::process
         SL -->|Leitura Fato| FATO[Fatos]:::process
+        DIMS ~~~ FATO
         DIMS --> JOIN{Star Schema}:::gold
         FATO --> JOIN
         JOIN -->|Persistência Final| GD[(Gold Layer)]:::gold
