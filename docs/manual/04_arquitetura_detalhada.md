@@ -67,6 +67,9 @@ erDiagram
         decimal kg_liquido
         decimal valor_unitario
         decimal preco_kg
+        int flag_exportacao
+        int flag_importacao
+        timestamp dt_atualizacao
     }
 
     dim_data {
