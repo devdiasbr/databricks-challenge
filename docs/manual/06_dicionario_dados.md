@@ -142,25 +142,6 @@ GROUP BY l.pais, l.bloco_pais
 ORDER BY valor_total_importado DESC;
 ```
 
-### Exemplo de Uso: Evolução Trimestral por Estado (UF)
-
-Monitora o desempenho das exportações de um estado específico ao longo dos trimestres.
-
-```sql
-SELECT 
-    l.uf,
-    d.ano,
-    d.trimestre,
-    SUM(f.valor_fob) as total_exportado
-FROM gold.ft_balanco_comercial f
-JOIN gold.dim_localidade l ON f.sk_localidade = l.sk_localidade
-JOIN gold.dim_data d ON f.sk_data = d.sk_data
-WHERE l.uf = 'SP'        -- Filtro por Estado (São Paulo)
-  AND f.flag_exportacao = 1
-GROUP BY l.uf, d.ano, d.trimestre
-ORDER BY d.ano, d.trimestre;
-```
-
 ---
 
 ## 5. Dimensão Via Transporte (`dim_via_transporte`)
