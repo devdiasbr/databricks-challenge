@@ -1,4 +1,4 @@
-[Escopo](./00_escopo_e_cronograma.md) | [Visão Geral](./01_visao_geral.md) | [Configuração](./02_configuracao_ambiente.md) | [Execução](./03_execucao_pipeline.md) | **Arquitetura** | [Troubleshooting](./05_guia_troubleshooting.md)
+[Escopo](./00_escopo_e_cronograma.md) | [Visão Geral](./01_visao_geral.md) | [Configuração](./02_configuracao_ambiente.md) | [Execução](./03_execucao_pipeline.md) | **Arquitetura** | [Troubleshooting](./05_guia_troubleshooting.md) | [Dicionário](./06_dicionario_dados.md)
 
 ---
 
@@ -29,6 +29,85 @@
     *   Usamos `.mode("overwrite")` do Delta.
     *   Isso substitui os dados atomicamente, evitando o erro clássico de `DirectoryIsNotEmpty` do Hadoop.
 
+### 🥇 Gold Layer (Refined)
+*   **Objetivo**: Dados modelados para Analytics, BI e Relatórios (Business-Ready).
+*   **Modelo**: Star Schema (Modelo Estrela).
+*   **Formato**: Delta Lake (Otimizado com `Z-Order` e `Partitioning`).
+*   **Estratégia**:
+    *   Criação de chaves substitutas (`sk_*`) para integridade referencial.
+    *   Enriquecimento de dimensões (ex: Sector Econômico baseado no NCM, Regiões baseadas em UF).
+    *   Unificação de Fatos (Importação + Exportação na mesma tabela).
+
+#### 📊 Modelo de Dados (Star Schema)
+
+As tabelas foram desenhadas para responder perguntas de negócio como *"Qual o valor FOB exportado por Estado e Setor Econômico no último trimestre?"*.
+
+| Tabela | Tipo | Descrição | Granularidade |
+| :--- | :--- | :--- | :--- |
+| **ft_balanco_comercial** | Fato | Transações de Importação e Exportação unificadas. | NCM + País/UF + Via + Mês |
+| **dim_data** | Dimensão | Calendário fiscal e sazonal (Ano, Mês, Trimestre). | Mês |
+| **dim_ncm** | Dimensão | Detalhes do Produto, CNAE e Setor Econômico. | Código NCM |
+| **dim_localidade** | Dimensão | Geografia (País, Bloco Econômico, UF, Região). | País + UF |
+| **dim_via_transporte** | Dimensão | Modal logístico (Marítima, Aérea, etc.). | Código Via |
+
+### 📐 Diagrama de Entidade-Relacionamento (DER)
+
+Abaixo apresentamos a modelagem física da camada Gold, ilustrando as chaves primárias (PK), chaves estrangeiras (FK) e os relacionamentos entre a tabela Fato e as Dimensões.
+
+```mermaid
+erDiagram
+    ft_balanco_comercial {
+        bigint sk_ncm FK
+        bigint sk_localidade FK
+        bigint sk_via_transporte FK
+        bigint sk_data FK
+        string tipo_movimentacao
+        decimal valor_fob
+        decimal quantidade
+        decimal kg_liquido
+        decimal valor_unitario
+        decimal preco_kg
+    }
+
+    dim_data {
+        bigint sk_data PK
+        date data
+        int ano
+        int mes
+        string nome_mes
+        int trimestre
+        int semestre
+    }
+
+    dim_ncm {
+        bigint sk_ncm PK
+        string codigo_ncm
+        string descricao_ncm
+        string cnae
+        string descricao_cnae
+        string setor_economico
+    }
+
+    dim_localidade {
+        bigint sk_localidade PK
+        string pais
+        string uf
+        string regiao
+        string bloco_pais
+    }
+
+    dim_via_transporte {
+        bigint sk_via_transporte PK
+        int codigo_via
+        string descricao_via
+    }
+
+    dim_data ||--o{ ft_balanco_comercial : "filtra por período"
+    dim_ncm ||--o{ ft_balanco_comercial : "descreve produto"
+    dim_localidade ||--o{ ft_balanco_comercial : "localiza origem/destino"
+    dim_via_transporte ||--o{ ft_balanco_comercial : "transporta via"
+```
+
 ## 🔄 Fluxo de Dados
 
 ```mermaid
@@ -36,12 +115,20 @@ graph TD
     LZ[Landing Zone] -->|Ingestão| BR[Bronze]
     BR -->|Leitura Spark| DF[DataFrame]
     DF -->|Transformação| SL[Silver]
+    SL -->|Modelagem| GD[Gold]
     
     subgraph "Detalhe Silver"
         DF --> CLEAN[Limpeza Strings]
         CLEAN --> TYPE[Tipagem Forte]
         TYPE --> SCHEMA[Validação Schema]
         SCHEMA --> WRITE[Escrita Delta]
+    end
+
+    subgraph "Detalhe Gold"
+        SL --> DIMS[Criação Dimensões]
+        SL --> FATO[Criação Fato]
+        DIMS --> JOIN[Star Schema]
+        FATO --> JOIN
     end
 ```
 
