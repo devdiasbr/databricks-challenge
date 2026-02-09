@@ -92,13 +92,14 @@ if os.name == 'nt':
 
 import utils.config as config
 from utils.file_validator import SmartFileLoader
+from azure.storage.blob import ContainerClient
 
 # =============================================================================
 # INITIALIZE SPARK SESSION
 # =============================================================================
 def get_spark_session():
     # logger.info("Initializing Spark Session with Delta support...")
-    is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")
+    is_databricks = ("DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")) and os.name != 'nt'
     
     if is_databricks:
         # No Databricks, usar a sessão existente
@@ -219,42 +220,28 @@ def get_mapping_for_file(filename):
 # =============================================================================
 arquivos_para_ignorar = [] #["NBM.csv", "NBM_NCM.csv"]
 
-logger.info(f"Listando arquivos em: {SOURCE_ABFSS_PATH}")
+logger.info(f"Listando arquivos em: {SOURCE_CONTAINER} (via Azure SDK)")
 
-# Listagem de arquivos via Hadoop API (funciona com SAS configurado acima)
-Path = spark._jvm.org.apache.hadoop.fs.Path
-hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
-hadoop_conf.set("fs.azure.enable.check.access", "false")
-
-# Propaga configurações de SAS para o Hadoop Conf do contexto (importante para o FileSystem)
-if SOURCE_SAS:
-    # Configuração ABFSS
-    hadoop_conf.set(f"fs.azure.account.auth.type.{SOURCE_ACCOUNT}.dfs.core.windows.net", "SAS")
-    hadoop_conf.set(f"fs.azure.sas.token.provider.type.{SOURCE_ACCOUNT}.dfs.core.windows.net", "org.apache.hadoop.fs.azurebfs.sas.FixedSASTokenProvider")
-    hadoop_conf.set(f"fs.azure.sas.fixed.token.{SOURCE_ACCOUNT}.dfs.core.windows.net", SOURCE_SAS)
-    
-    # Configuração WASBS (Fallback)
-    hadoop_conf.set(f"fs.azure.sas.{SOURCE_CONTAINER}.{SOURCE_ACCOUNT}.blob.core.windows.net", SOURCE_SAS)
-
+# Substituição do Hadoop FS pelo Azure SDK (ContainerClient) para maior estabilidade local
 try:
-    fs = Path(SOURCE_ABFSS_PATH).getFileSystem(hadoop_conf)
-    status_list = fs.listStatus(Path(SOURCE_ABFSS_PATH))
-except Exception as e:
-    logger.warning(f"Erro ao listar com ABFSS ({e}). Tentando fallback para WASBS...")
-    SOURCE_ABFSS_PATH = f"wasbs://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.blob.core.windows.net"
-    # Se falhou no Source com ABFSS, provavelmente falhará no Target também. Muda Target para WASBS.
-    TARGET_ABFSS_PATH = f"wasbs://{TARGET_CONTAINER}@{TARGET_ACCOUNT}.blob.core.windows.net"
-    
-    fs = Path(SOURCE_ABFSS_PATH).getFileSystem(hadoop_conf)
-    status_list = fs.listStatus(Path(SOURCE_ABFSS_PATH))
-    logger.info(f"Fallback para WASBS bem sucedido. \nOrigem: {SOURCE_ABFSS_PATH}\nDestino: {TARGET_ABFSS_PATH}")
+    if config.LANDING_ACCOUNT_KEY:
+        account_url = f"https://{SOURCE_ACCOUNT}.blob.core.windows.net"
+        container_client = ContainerClient(account_url=account_url, container_name=SOURCE_CONTAINER, credential=config.LANDING_ACCOUNT_KEY)
+        logger.info("Autenticado com Account Key.")
+    else:
+        # SAS Token fallback
+        container_url = f"https://{SOURCE_ACCOUNT}.blob.core.windows.net/{SOURCE_CONTAINER}?{SOURCE_SAS}"
+        container_client = ContainerClient.from_container_url(container_url)
+        logger.info("Autenticado com SAS Token.")
 
-arquivos = []
-for status in status_list:
-    path = status.getPath().toString()
-    name = status.getPath().getName()
-    if status.isFile():
-        arquivos.append((path, name))
+    blobs = container_client.list_blobs()
+    arquivos = []
+    for blob in blobs:
+        arquivos.append((blob.name, blob.name)) # path (name key), name
+
+except Exception as e:
+    logger.error(f"Erro ao listar blobs: {e}")
+    raise e
 
 # Filtra arquivos relevantes com validação e logging
 arquivos_filtrados = []
@@ -283,7 +270,7 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 pbar = tqdm.tqdm(arquivos_filtrados, desc="Ingestão Bronze")
 
-for full_path, name in pbar:
+for blob_name, name in pbar:
     pbar.set_description(f"Ingerindo: {name}")
     
     # Cria diretório de staging para este arquivo
@@ -293,8 +280,10 @@ for full_path, name in pbar:
     
     try:
         # 1. Download do arquivo (Azure -> Local) para inspeção e leitura
-        # copyToLocalFile(delSrc, src, dst, useRawLocalFileSystem)
-        fs.copyToLocalFile(False, Path(full_path), Path(local_path), True)
+        # Usando Azure SDK em vez de Hadoop FS
+        with open(local_path, "wb") as f:
+            download_stream = container_client.download_blob(blob_name)
+            f.write(download_stream.readall())
         
         # 2. Inspeção Inteligente (SmartFileLoader)
         loader = SmartFileLoader(temp_dir=file_temp_dir)
@@ -319,11 +308,11 @@ for full_path, name in pbar:
             file_info['options']['encoding'] = 'ISO-8859-1'
 
         # 3. Leitura com Spark (Lê do disco local processado/extraído)
-        spark_path = file_info['path']
+        spark_path = local_path # file_info['path']
         
         # [DATABRICKS COMPATIBILITY]
         # Se estiver no Databricks (Env Var ou presença de /dbfs), o Spark (Executors) não vê o disco local do Driver (/tmp).
-        is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")
+        is_databricks = ("DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")) and os.name != 'nt'
         
         if is_databricks:
             logger.info(f"   [Databricks] Preparando arquivo para leitura distribuída: {name}")

@@ -81,7 +81,7 @@ if os.name == 'nt':
         os.environ['PATH'] += os.pathsep + hadoop_bin
 
 # Initialize Spark
-is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")
+is_databricks = ("DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")) and os.name != 'nt'
 
 if is_databricks:
     # No Databricks, usar a sessão existente
@@ -459,7 +459,7 @@ def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logg
                 
                 # [DATABRICKS COMPATIBILITY]
                 # Se estiver no Databricks (Env Var ou /dbfs), mover arquivo local (/tmp) para DBFS
-                is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")
+                is_databricks = ("DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")) and os.name != 'nt'
                 
                 if is_databricks:
                     logger.info(f"[{entity_name}] [Databricks] Movendo arquivo para DBFS para leitura Spark...")
