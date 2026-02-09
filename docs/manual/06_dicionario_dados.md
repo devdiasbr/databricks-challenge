@@ -75,6 +75,22 @@ Tabela de calendário para suporte a análises temporais.
 | `trimestre` | `INT` | - | Número do trimestre (1-4). | `1` |
 | `semestre` | `INT` | - | Número do semestre (1-2). | `1` |
 
+### Exemplo de Uso: Análise Temporal (Anual e Trimestral)
+
+Agrega os valores de exportação por Ano e Trimestre para identificar tendências sazonais.
+
+```sql
+SELECT 
+    d.ano,
+    d.trimestre,
+    SUM(f.valor_fob) as total_exportado
+FROM gold.ft_balanco_comercial f
+JOIN gold.dim_data d ON f.sk_data = d.sk_data
+WHERE f.flag_exportacao = 1
+GROUP BY d.ano, d.trimestre
+ORDER BY d.ano DESC, d.trimestre DESC;
+```
+
 ---
 
 ## 3. Dimensão NCM (`dim_ncm`)
