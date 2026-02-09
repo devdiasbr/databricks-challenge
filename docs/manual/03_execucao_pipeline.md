@@ -6,7 +6,9 @@
 
 O pipeline é composto por scripts numerados sequencialmente em `src/scripts/`.
 
-## 📜 Execução Passo a Passo
+## 📜 Execução do Pipeline
+
+Os scripts do pipeline foram desenhados para execução sequencial, garantindo a correta propagação dos dados entre as camadas (Bronze → Silver → Gold).
 
 ### 1. Diagnóstico (Opcional)
 Verifique os arquivos disponíveis na origem:

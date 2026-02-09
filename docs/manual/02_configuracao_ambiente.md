@@ -25,7 +25,7 @@ python -m venv venv
 ```
 
 ### 3. Instalar Dependências
-O script de setup já faz isso, mas você pode fazer manualmente:
+Execute o comando abaixo para instalar as bibliotecas necessárias:
 ```bash
 pip install -r requirements.txt
 ```
