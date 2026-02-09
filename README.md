@@ -11,7 +11,6 @@ Este projeto implementa um pipeline de engenharia de dados robusto e escalável 
 
 ## 📑 Índice
 
-*   [📚 Manual do Usuário (Documentação Completa)](docs/manual/00_escopo_e_cronograma.md)
 *   [🏗️ Arquitetura e Fluxo de Dados](#-arquitetura-e-fluxo-de-dados)
 *   [🚀 Funcionalidades e Diferenciais](#-funcionalidades-e-diferenciais)
 *   [⚙️ Configurações de Otimização (Delta Lake)](#-configurações-de-otimização-delta-lake)
@@ -19,8 +18,6 @@ Este projeto implementa um pipeline de engenharia de dados robusto e escalável 
 *   [🛠️ Como Executar](#-como-executar)
 *   [🧠 Decisões de Design](#-decisões-de-design)
 *   [🔧 Troubleshooting](#-troubleshooting)
-
----
 
 ---
 
