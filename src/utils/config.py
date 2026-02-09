@@ -79,6 +79,10 @@ TARGET_RAW_URL = get_config("AZURE_TARGET_STORAGE_RAW_URL")
 TARGET_TRUSTED_URL = get_config("AZURE_TARGET_STORAGE_TRUSTED_URL")
 TARGET_REFINED_URL = get_config("AZURE_TARGET_STORAGE_REFINED_URL")
 
+# --- Configurações Delta Lake ---
+DELTA_VACUUM_RETENTION_DAYS = 60
+DELTA_OPTIMIZE_FILE_SIZE = 10485760  # 10 MB em bytes
+
 # Extrai nome da conta de destino (Prioridade: Env Var > URL > Default)
 TARGET_ACCOUNT = get_config("TARGET_ACCOUNT") or get_config("AZURE_TARGET_ACCOUNT")
 

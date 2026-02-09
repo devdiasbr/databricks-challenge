@@ -128,8 +128,14 @@ def salvar_tabela_gold(df, nome_tabela, particionar_por=None):
     # Otimização
     try:
         spark = SparkSession.getActiveSession()
+        
+        # Configura tamanho alvo do arquivo para OPTIMIZE (10MB)
+        spark.conf.set("spark.databricks.delta.optimize.maxFileSize", config.DELTA_OPTIMIZE_FILE_SIZE)
+        
         spark.sql(f"OPTIMIZE delta.`{target_path}`")
-        spark.sql(f"VACUUM delta.`{target_path}` RETAIN 168 HOURS")
+        
+        spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+        spark.sql(f"VACUUM delta.`{target_path}` RETAIN {config.DELTA_VACUUM_RETENTION_DAYS * 24} HOURS")
         logger.info(f"⚡ Tabela {nome_tabela} otimizada.")
     except Exception as e:
         logger.warning(f"⚠️ Não foi possível otimizar {nome_tabela}: {e}")

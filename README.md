@@ -42,6 +42,23 @@ graph LR
 *   **Observabilidade**: Logs detalhados são enviados para o console (com barras de progresso `tqdm`) e persistidos.
 *   **Suporte a Windows**: O projeto baixa e configura automaticamente o `winutils.exe` (Hadoop binaries) para permitir a execução do Spark no Windows sem dores de cabeça.
 *   **Atomicidade**: Uso de operações atômicas do Delta Lake (`overwrite` mode) e comandos `OPTIMIZE/VACUUM` para performance.
+*   **Otimização Automática**: Configuração explícita de `OPTIMIZE` (Target Size: 10MB) e `VACUUM` (Retenção: 60 dias) para manutenção saudável do Data Lake.
+
+---
+
+## ⚙️ Configurações de Otimização (Delta Lake)
+
+Para garantir alta performance de leitura e controle de custos de armazenamento, o pipeline aplica as seguintes políticas nas camadas **Silver** e **Gold**:
+
+1.  **OPTIMIZE (Z-Order & Compaction)**:
+    *   Arquivos pequenos são compactados para um tamanho alvo de **10 MB** (`10485760 bytes`).
+    *   Isso evita o problema de "small files" que degrada a performance do Spark.
+    *   Configuração: `DELTA_OPTIMIZE_FILE_SIZE` em `src/utils/config.py`.
+
+2.  **VACUUM (Limpeza de Histórico)**:
+    *   Versões antigas dos dados (ex: arquivos sobrescritos) são removidas fisicamente após **60 dias**.
+    *   Isso permite Time Travel (voltar no tempo) por 2 meses, equilibrando segurança e custo.
+    *   Configuração: `DELTA_VACUUM_RETENTION_DAYS` em `src/utils/config.py`.
 
 ---
 

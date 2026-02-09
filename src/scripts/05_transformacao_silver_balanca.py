@@ -349,12 +349,15 @@ def process_balanca_comercial():
             # Otimização Delta (Z-ORDER e Compactação)
             logger.info("  ⚡ Executando OPTIMIZE e VACUUM...")
             try:
+                # Configura tamanho alvo do arquivo para OPTIMIZE (10MB)
+                spark.conf.set("spark.databricks.delta.optimize.maxFileSize", config.DELTA_OPTIMIZE_FILE_SIZE)
+                
                 # Otimização
                 spark.sql(f"OPTIMIZE delta.`{target_path}`")
                 
-                # Limpeza (Mantém 7 dias de histórico)
+                # Limpeza (Mantém 60 dias de histórico conforme config)
                 spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
-                spark.sql(f"VACUUM delta.`{target_path}` RETAIN 168 HOURS")
+                spark.sql(f"VACUUM delta.`{target_path}` RETAIN {config.DELTA_VACUUM_RETENTION_DAYS * 24} HOURS")
             except Exception as e:
                 logger.warning(f"  ⚠️ Otimização não executada (pode exigir Databricks Runtime ou Spark configurado): {e}")
 
