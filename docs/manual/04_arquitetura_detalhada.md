@@ -123,47 +123,42 @@ flowchart TD
     classDef silver fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,rx:6,ry:6;
     classDef gold fill:#fff8e1,stroke:#f9a825,stroke-width:3px,rx:10,ry:10;
     classDef process fill:#ffffff,stroke:#ef6c00,stroke-width:2px,stroke-dasharray: 5 5,rx:6,ry:6;
-    classDef spacer fill:transparent,stroke:transparent;
 
-    %% LANDING
-    LZ[Landing Zone]:::landing
-    BR[(Bronze Layer)]:::bronze
-    LZ -->|Ingestão Raw| BR
+    %% =========================
+    %% LANDING / BRONZE
+    %% =========================
+    LZ[Landing Zone]:::landing -->|Ingestão Raw| BR[(Bronze Layer)]:::bronze
 
+    %% =========================
     %% SILVER
-    subgraph SILVER["Processamento - Silver Layer"]
-        direction TB
-        DF["DataFrame (Spark)"]:::process
-        CLEAN[Limpeza e Padronização]:::process
-        TYPE[Tipagem Forte]:::process
-        VALID[Validação de Schema]:::process
-        SL[(Silver Layer)]:::silver
+    %% =========================
+    subgraph SILVER [Processamento - Silver Layer]
 
-        DF --> CLEAN --> TYPE --> VALID -->|Escrita Delta| SL
+        direction TB
+        BR --> DF["DataFrame (Spark)"]:::process
+        DF --> CLEAN[Limpeza e Padronização]:::process
+        CLEAN --> TYPE[Tipagem Forte]:::process
+        TYPE --> VALID[Validação de Schema]:::process
+        VALID -->|Escrita Delta| SL[(Silver Layer)]:::silver
     end
 
-    BR -->|Leitura Spark| DF
-
+    %% =========================
     %% GOLD
-    subgraph GOLD["Modelagem Dimensional - Gold Layer"]
+    %% =========================
+    subgraph GOLD [Modelagem Dimensional - Gold Layer]
+    
+    
         direction TB
-
-        SPACE[ ]:::spacer
-        DIMS[Dimensões]:::process
-        FACT[Fatos]:::process
-        STAR{{Star Schema}}:::gold
-        GL[(Gold Layer)]:::gold
-
-        SPACE --> DIMS
-        SPACE --> FACT
-        DIMS --> STAR
+        SL -->|Leitura Dimensões| DIMS[Dimensões]:::process
+        SL -->|Leitura Fatos| FACT[Fatos]:::process
+        DIMS --> STAR{Star Schema}:::gold
         FACT --> STAR
-        STAR -->|Persistência Final| GL
+        STAR -->|Persistência Final| GL[(Gold Layer)]:::gold
     end
 
-    SL -->|Leitura Dimensões| DIMS
-    SL -->|Leitura Fatos| FACT
-
+    %% =========================
+    %% ESTILO DAS CONEXÕES
+    %% =========================
     linkStyle default stroke:#546e7a,stroke-width:2px;
 ```
 
