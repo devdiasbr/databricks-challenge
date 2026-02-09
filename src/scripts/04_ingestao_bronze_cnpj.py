@@ -461,13 +461,19 @@ def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logg
                 # Se estiver no Databricks (Env Var ou /dbfs), mover arquivo local (/tmp) para DBFS
                 is_databricks = ("DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")) and os.name != 'nt'
                 
+                df_raw = None
+
                 if is_databricks:
-                    logger.info(f"[{entity_name}] [Databricks] Movendo arquivo para DBFS para leitura Spark...")
+                    logger.info(f"[{entity_name}] [Databricks] Preparando leitura otimizada...")
+                    # NOTA: Assim como na Balança, manteremos a leitura Batch para o CNPJ
+                    # pois dependemos do download e extração local dos ZIPs.
+                    # O Auto Loader puro seria ideal se lêssemos direto da Landing, 
+                    # mas isso exigiria mudar a estratégia de extração de ZIPs on-the-fly.
+                    
                     try:
                         fname = os.path.basename(spark_path)
                         dbfs_bridge_path = f"dbfs:/tmp/cnpj_bridge/{fname}"
                         
-                        # Tenta usar dbutils (Padrão Databricks)
                         try:
                             from pyspark.dbutils import DBUtils
                             dbutils = DBUtils(spark)
@@ -475,7 +481,6 @@ def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logg
                             dbutils.fs.cp(src_path_with_schema, dbfs_bridge_path)
                             spark_path = dbfs_bridge_path
                         except ImportError:
-                            # Fallback para /dbfs (Mount)
                             if os.path.exists("/dbfs"):
                                 dbfs_dir = os.path.join("/dbfs", "tmp", "cnpj_bridge")
                                 os.makedirs(dbfs_dir, exist_ok=True)
@@ -489,9 +494,14 @@ def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logg
                     except Exception as e:
                         logger.warning(f"[{entity_name}] Falha ao mover para DBFS: {e}. Tentando file://")
                         spark_path = f"file://{spark_path}"
-                
-                logger.info(f"[{entity_name}] Reading with Spark from: {spark_path}")
-                df_raw = spark.read.format(file_info['format']).options(**file_info['options']).load(spark_path)
+
+                    logger.info(f"[{entity_name}] Reading with Spark from: {spark_path}")
+                    df_raw = spark.read.format(file_info['format']).options(**file_info['options']).load(spark_path)
+
+                else:
+                    # LOCAL MODE
+                    logger.info(f"[{entity_name}] Reading with Spark (Local) from: {spark_path}")
+                    df_raw = spark.read.format(file_info['format']).options(**file_info['options']).load(spark_path)
                 
                 # 3. Rename/Select Columns
                 column_names = COLUMN_NAMES.get(entity_name, [])
