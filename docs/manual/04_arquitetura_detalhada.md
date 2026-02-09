@@ -133,12 +133,11 @@ flowchart TD
     end
 
     subgraph Gold_Stage [Modelagem Gold]
-        SL -->|Leitura Otimizada| DIMS[Dimensões]:::process
-        SL -->|Leitura Fato| FATO[Fatos]:::process
-        DIMS ~~~ FATO
+        SL -->|Leitura Dims| DIMS[Dimensões]:::process
+        SL -->|Leitura Fatos| FATO[Fatos]:::process
         DIMS --> JOIN{Star Schema}:::gold
         FATO --> JOIN
-        JOIN -->|Persistência Final| GD[(Gold Layer)]:::gold
+        JOIN -->|Persistência| GD[(Gold Layer)]:::gold
     end
 
     %% Estilização das Conexões
