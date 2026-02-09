@@ -1,3 +1,4 @@
+# Databricks notebook source
 import unicodedata
 from pyspark.sql.functions import col, trim, upper
 from pyspark.sql.types import StringType
