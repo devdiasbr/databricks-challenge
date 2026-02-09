@@ -148,8 +148,8 @@ flowchart TD
     subgraph GOLD [Gold Layer]
     
         direction TB
-        SL -->|Leitura Dimensões| DIMS[Dimensões]:::process
-        SL -->|Leitura Fatos| FACT[Fatos]:::process
+        SL -->|Processamento Dimensões| DIMS[Dimensões]:::process
+        SL -->|Processamento Fatos| FACT[Fatos]:::process
         DIMS --> STAR{Star Schema}:::gold
         FACT --> STAR
         STAR -->|Persistência Final| GL[(Gold Layer)]:::gold
