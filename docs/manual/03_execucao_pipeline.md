@@ -6,21 +6,7 @@
 
 O pipeline é composto por scripts numerados sequencialmente em `src/scripts/`.
 
-## 🎮 O Orquestrador (`00_setup.py`)
-A maneira mais fácil de rodar é usando o orquestrador. Ele garante a ordem correta e gerencia dependências.
-
-```bash
-# Executa TUDO (Setup + Bronze + Silver)
-python src/scripts/00_setup.py
-
-# Pular instalação de dependências (se já instalou)
-python src/scripts/00_setup.py --skip-deps
-
-# Rodar apenas a camada Silver
-python src/scripts/00_setup.py --skip-deps --skip-bronze
-```
-
-## 📜 Execução Manual (Passo a Passo)
+## 📜 Execução Passo a Passo
 
 ### 1. Diagnóstico (Opcional)
 Verifique os arquivos disponíveis na origem:
