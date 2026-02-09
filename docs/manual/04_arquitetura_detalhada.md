@@ -151,7 +151,7 @@ flowchart TD
         SPACE1[ ]:::spacer
 
         SPACE1 --> DIMS
-        SPACE2 --> FACT
+        DIMS --> FACT
 
         SL -->|Leitura Dimensões| DIMS[Dimensões]:::process
         SL -->|Leitura Fatos| FACT[Fatos]:::process
