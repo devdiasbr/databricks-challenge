@@ -9,6 +9,18 @@ Este projeto implementa um pipeline de engenharia de dados robusto e escalável 
 
 ---
 
+## 📑 Índice
+
+*   [🏗️ Arquitetura e Fluxo de Dados](#-arquitetura-e-fluxo-de-dados)
+*   [🚀 Funcionalidades e Diferenciais](#-funcionalidades-e-diferenciais)
+*   [⚙️ Configurações de Otimização (Delta Lake)](#-configurações-de-otimização-delta-lake)
+*   [📂 Estrutura do Projeto](#-estrutura-do-projeto)
+*   [🛠️ Como Executar](#-como-executar)
+*   [🧠 Decisões de Design](#-decisões-de-design)
+*   [🔧 Troubleshooting](#-troubleshooting)
+
+---
+
 ## 🏗️ Arquitetura e Fluxo de Dados
 
 O projeto segue o padrão Medallion para garantir qualidade e governança dos dados.
