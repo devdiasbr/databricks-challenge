@@ -1,6 +1,8 @@
 import logging
 import tqdm
 
+# COMMAND ----------
+
 class TqdmLoggingHandler(logging.Handler):
     """
     Handler customizado para redirecionar logs para tqdm.write(),

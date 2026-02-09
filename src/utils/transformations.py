@@ -2,6 +2,8 @@ import unicodedata
 from pyspark.sql.functions import col, trim, upper
 from pyspark.sql.types import StringType
 
+# COMMAND ----------
+
 def normalize_column_name(col_name):
     """Padroniza nomes de colunas: minúsculas, sem acentos, sem espaços."""
     # Remove acentos
@@ -10,6 +12,8 @@ def normalize_column_name(col_name):
     
     # Minúsculas e substitui espaços/hífens por underscore
     return col_name.lower().strip().replace(' ', '_').replace('-', '_')
+
+# COMMAND ----------
 
 class BaseTransform:
     """

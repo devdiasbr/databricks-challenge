@@ -1,6 +1,8 @@
 import os
 import sys
 
+# COMMAND ----------
+
 # Adiciona o diretório 'src' ao sys.path para permitir imports de 'utils'
 # Configuração robusta de caminhos (Híbrido Local/Databricks)
 try:
@@ -19,6 +21,8 @@ if src_dir not in sys.path:
 
 from azure.storage.blob import ContainerClient
 from utils.config import STRUCTURE, get_target_url
+
+# COMMAND ----------
 
 def ensure_container_accessible(container_url, container_name):
     """Verifica se o container é acessível via URL SAS."""
@@ -85,6 +89,8 @@ def setup_and_validate_targets():
                          print(f"      ⚠️ Não foi possível listar pastas: {e}")
 
     print("\n✅ Validação Concluída.")
+
+# COMMAND ----------
 
 if __name__ == "__main__":
     setup_and_validate_targets()

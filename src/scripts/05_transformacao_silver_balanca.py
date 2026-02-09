@@ -58,6 +58,8 @@ if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         logger.addHandler(handler)
 
+# COMMAND ----------
+
 def get_spark_session():
     """Cria e configura a sessão Spark com suporte a Delta e Azure."""
     builder = SparkSession.builder \
@@ -84,6 +86,8 @@ def get_spark_session():
     logging.getLogger("py4j").setLevel(logging.ERROR)
     
     return spark
+
+# COMMAND ----------
 
 def configure_azure_access(spark):
     """Configura o acesso ao Azure Blob Storage usando SAS Tokens do config.py."""
@@ -114,6 +118,8 @@ def configure_azure_access(spark):
             spark.conf.set(f"fs.azure.sas.fixed.token.{account}.dfs.core.windows.net", sas_token)
             
             logger.info(f"✅ Configurado acesso SAS para {account}/{layer}")
+
+# COMMAND ----------
 
 def list_raw_folders(prefix="balancacomercial/"):
     """Lista as pastas dentro do prefixo especificado no container RAW."""
@@ -207,6 +213,8 @@ def get_schema_mapping(folder_name, schema):
     
     logger.warning(f"  ⚠️ Nenhum schema específico encontrado para '{folder_name}'. Usando normalização padrão.")
     return {}
+
+# COMMAND ----------
 
 def process_balanca_comercial():
     logger.info(f"\n🚀 Iniciando processamento Balança Comercial: Bronze -> Silver")

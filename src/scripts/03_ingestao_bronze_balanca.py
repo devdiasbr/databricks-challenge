@@ -97,6 +97,8 @@ from azure.storage.blob import ContainerClient
 # =============================================================================
 # INITIALIZE SPARK SESSION
 # =============================================================================
+# COMMAND ----------
+
 def get_spark_session():
     # logger.info("Initializing Spark Session with Delta support...")
     is_databricks = ("DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")) and os.name != 'nt'
@@ -218,6 +220,8 @@ def get_mapping_for_file(filename):
 # =============================================================================
 # LÓGICA DE INGESTÃO
 # =============================================================================
+# COMMAND ----------
+
 arquivos_para_ignorar = [] #["NBM.csv", "NBM_NCM.csv"]
 
 logger.info(f"Listando arquivos em: {SOURCE_CONTAINER} (via Azure SDK)")

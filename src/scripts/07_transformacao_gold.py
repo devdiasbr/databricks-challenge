@@ -48,6 +48,8 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S'))
     logger.addHandler(handler)
 
+# COMMAND ----------
+
 # Constantes de Auditoria
 CAMPO_ATUALIZACAO = "dt_atualizacao"
 USUARIO_ATUALIZACAO = "system@pipeline" # Idealmente viria de config ou env
@@ -69,6 +71,8 @@ def get_spark_session():
     logging.getLogger("py4j").setLevel(logging.ERROR)
     return spark
 
+# COMMAND ----------
+
 def configure_azure_access(spark):
     """Configura o acesso ao Azure Blob Storage (Trusted e Refined)."""
     layers = ["trusted", "refined"]
@@ -87,6 +91,8 @@ def configure_azure_access(spark):
         if sas_token:
             spark.conf.set(f"fs.azure.sas.{layer}.{account}.blob.core.windows.net", sas_token)
             logger.info(f"✅ Configurado acesso SAS para {account}/{layer}")
+
+# COMMAND ----------
 
 def adicionar_metadados(df):
     """Adiciona colunas de auditoria."""
@@ -121,6 +127,8 @@ def salvar_tabela_gold(df, nome_tabela, particionar_por=None):
         logger.warning(f"⚠️ Não foi possível otimizar {nome_tabela}: {e}")
 
     logger.info(f"✅ Tabela {nome_tabela} criada com sucesso! Registros: {df.count():,}")
+
+# COMMAND ----------
 
 def processar_gold():
     logger.info("🚀 Iniciando processamento Refined (Gold)...")

@@ -192,6 +192,8 @@ class SmartFileLoader:
             'is_compressed': False
         }
 
+# COMMAND ----------
+
 # Função wrapper simples para manter compatibilidade ou uso rápido
 def get_file_info(file_path: str):
     loader = SmartFileLoader()

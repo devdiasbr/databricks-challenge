@@ -80,6 +80,8 @@ if os.name == 'nt':
     if hadoop_bin not in os.environ['PATH']:
         os.environ['PATH'] += os.pathsep + hadoop_bin
 
+# COMMAND ----------
+
 # Initialize Spark
 is_databricks = ("DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")) and os.name != 'nt'
 
@@ -151,6 +153,8 @@ except ImportError:
     dbutils = DBUtilsMock()
 
 # Configuration
+# COMMAND ----------
+
 from utils import config
 
 # Source Config (Account Key) - From config/env (Secure)
@@ -278,6 +282,8 @@ except Exception as e:
     print(f"Erro ao carregar schema CNPJ: {e}")
     # Fallback vazio ou erro crítico? Melhor erro crítico ou logar
     COLUMN_NAMES = {}
+
+# COMMAND ----------
 
 # Logging
 class BlobStorageHandler(logging.Handler):
@@ -558,6 +564,8 @@ def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logg
                 
     except Exception as e:
         logger.error(f"[{entity_name}] Critical error: {str(e)}")
+
+# COMMAND ----------
 
 def run_pipeline():
     start_time = datetime.now()

@@ -26,6 +26,8 @@ if not loaded:
     print("[Config] .env não encontrado no caminho explícito. Tentando busca padrão...")
     load_dotenv()
 
+# COMMAND ----------
+
 # --- Helpers de Configuração ---
 def get_config(key, default=None):
     """
@@ -50,6 +52,8 @@ def get_config(key, default=None):
         pass
         
     return default
+
+# COMMAND ----------
 
 # --- Configurações de Storage ---
 
@@ -141,6 +145,8 @@ STRUCTURE = {
         "url": TARGET_REFINED_URL
     }
 }
+
+# COMMAND ----------
 
 def get_target_url(layer):
     """Retorna a URL completa (com SAS) para a camada especificada."""
