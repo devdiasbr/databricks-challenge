@@ -134,7 +134,7 @@ flowchart TD
     %% =========================
     subgraph SILVER [Processamento - Silver Layer]
         direction TB
-        BR --> DF[DataFrame (Spark)]:::process
+        BR --> DF["DataFrame (Spark)"]:::process
         DF --> CLEAN[Limpeza e Padronização]:::process
         CLEAN --> TYPE[Tipagem Forte]:::process
         TYPE --> VALID[Validação de Schema]:::process
