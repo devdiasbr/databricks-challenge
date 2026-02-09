@@ -99,7 +99,7 @@ Modal logístico utilizado na operação.
 
 ---
 
-## 6. Catálogo de Dados e Exemplos de Uso
+## 6. Exemplos de Uso
 
 Esta seção fornece exemplos práticos de como explorar os dados da camada Gold utilizando SQL. Estes exemplos demonstram o poder do modelo **Star Schema** para responder perguntas de negócio.
 
