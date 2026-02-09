@@ -115,34 +115,48 @@ erDiagram
 
 ```mermaid
 flowchart TD
-    %% Definição de Estilos (Classes)
-    classDef storage fill:#e1f5fe,stroke:#01579b,stroke-width:2px,rx:5,ry:5;
-    classDef process fill:#fff3e0,stroke:#e65100,stroke-width:2px,stroke-dasharray: 5 5,rx:5,ry:5;
-    classDef gold fill:#fff9c4,stroke:#fbc02d,stroke-width:3px,rx:10,ry:10;
-    classDef start fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,rx:10,ry:10;
+    %% =========================
+    %% DEFINIÇÃO DE ESTILOS
+    %% =========================
+    classDef landing fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,rx:8,ry:8;
+    classDef bronze fill:#efebe9,stroke:#5d4037,stroke-width:2px,rx:6,ry:6;
+    classDef silver fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,rx:6,ry:6;
+    classDef gold fill:#fff8e1,stroke:#f9a825,stroke-width:3px,rx:10,ry:10;
+    classDef process fill:#ffffff,stroke:#ef6c00,stroke-width:2px,stroke-dasharray: 5 5,rx:6,ry:6;
 
-    %% Fluxo Principal
-    LZ[Landing Zone]:::start -->|Ingestão Raw| BR[(Bronze Layer)]:::storage
-    
-    subgraph Silver_Stage [Processamento Silver]
-        BR -->|Leitura Spark| DF(DataFrame Memória):::process
-        DF --> CLEAN[Limpeza Strings]:::process
+    %% =========================
+    %% LANDING / BRONZE
+    %% =========================
+    LZ[Landing Zone]:::landing -->|Ingestão Raw| BR[(Bronze Layer)]:::bronze
+
+    %% =========================
+    %% SILVER
+    %% =========================
+    subgraph SILVER [Processamento - Silver Layer]
+        direction TB
+        BR --> DF[DataFrame (Spark)]:::process
+        DF --> CLEAN[Limpeza e Padronização]:::process
         CLEAN --> TYPE[Tipagem Forte]:::process
-        TYPE --> SCHEMA[Validação Schema]:::process
-        SCHEMA -->|Escrita Delta| SL[(Silver Layer)]:::storage
+        TYPE --> VALID[Validação de Schema]:::process
+        VALID -->|Escrita Delta| SL[(Silver Layer)]:::silver
     end
 
-    subgraph Gold_Stage [Modelagem Gold]
-        SL -->|Leitura Dims| DIMS[Dimensões]:::process
-        SL -->|Leitura Fatos| FATO[Fatos]:::process
-        DIMS --> JOIN{Star Schema}:::gold
-        FATO --> JOIN
-        JOIN -->|Persistência| GD[(Gold Layer)]:::gold
+    %% =========================
+    %% GOLD
+    %% =========================
+    subgraph GOLD [Modelagem Dimensional - Gold Layer]
+        direction TB
+        SL -->|Leitura Dimensões| DIMS[Dimensões]:::process
+        SL -->|Leitura Fatos| FACT[Fatos]:::process
+        DIMS --> STAR{Star Schema}:::gold
+        FACT --> STAR
+        STAR -->|Persistência Final| GL[(Gold Layer)]:::gold
     end
 
-    %% Estilização das Conexões
-    linkStyle default stroke:#455a64,stroke-width:2px;
-    linkStyle 0,5,10 stroke:#0277bd,stroke-width:3px;
+    %% =========================
+    %% ESTILO DAS CONEXÕES
+    %% =========================
+    linkStyle default stroke:#546e7a,stroke-width:2px;
 ```
 
 ## 🔐 Segurança
