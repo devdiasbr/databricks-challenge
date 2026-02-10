@@ -13,7 +13,7 @@ Este projeto implementa um pipeline de engenharia de dados robusto e escalável 
 
 *   [🏗️ Arquitetura e Fluxo de Dados](#-arquitetura-e-fluxo-de-dados)
 *   [🚀 Funcionalidades e Diferenciais](#-funcionalidades-e-diferenciais)
-*   [⚙️ Configurações de Otimização (Delta Lake)](#-configurações-de-otimização-delta-lake)
+*   [⚙️ Configurações de Otimização Delta Lake](#-configurações-de-otimização-delta-lake)
 *   [📂 Estrutura do Projeto](#-estrutura-do-projeto)
 *   [🛠️ Como Executar](#-como-executar)
 *   [🧠 Decisões de Design](#-decisões-de-design)
@@ -23,7 +23,9 @@ Este projeto implementa um pipeline de engenharia de dados robusto e escalável 
 
 ## 📚 Documentação Completa (Manual)
 
-Para detalhes aprofundados sobre cada aspecto do projeto, consulte o **Manual do Usuário** localizado na pasta `docs/manual`:
+Para detalhes aprofundados sobre cada aspecto do projeto, acesse o **[MANUAL](docs/manual/index.md)**.
+
+Abaixo, um resumo das seções disponíveis:
 
 | Seção | Descrição |
 | :--- | :--- |
@@ -74,7 +76,7 @@ graph LR
 
 ---
 
-## ⚙️ Configurações de Otimização (Delta Lake)
+## ⚙️ Configurações de Otimização Delta Lake
 
 Para garantir alta performance de leitura e controle de custos de armazenamento, o pipeline aplica as seguintes políticas nas camadas **Silver** e **Gold**:
 
