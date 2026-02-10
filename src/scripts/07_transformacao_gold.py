@@ -319,6 +319,16 @@ def processar_gold():
         # Cria mapa do Spark para lookup eficiente
         map_ufs = F.create_map([F.lit(x) for i in ufs_dict.items() for x in i])
 
+        # Mapeamento de Regiões
+        regioes_map = {
+            "AC": "Norte", "AP": "Norte", "AM": "Norte", "PA": "Norte", "RO": "Norte", "RR": "Norte", "TO": "Norte",
+            "AL": "Nordeste", "BA": "Nordeste", "CE": "Nordeste", "MA": "Nordeste", "PB": "Nordeste", "PE": "Nordeste", "PI": "Nordeste", "RN": "Nordeste", "SE": "Nordeste",
+            "GO": "Centro-Oeste", "MT": "Centro-Oeste", "MS": "Centro-Oeste", "DF": "Centro-Oeste",
+            "ES": "Sudeste", "MG": "Sudeste", "RJ": "Sudeste", "SP": "Sudeste",
+            "PR": "Sul", "RS": "Sul", "SC": "Sul"
+        }
+        map_regioes = F.create_map([F.lit(x) for i in regioes_map.items() for x in i])
+
         df_ufs_exp = spark.read.format("delta").load(f"{base_url_trusted}/exp") \
             .select(F.col("sg_uf_ncm").alias("uf")).distinct()
             
@@ -330,14 +340,7 @@ def processar_gold():
         df_dim_ufs = df_ufs_unicas \
             .withColumn("sk_uf", F.expr("ascii(substring(uf, 1, 1)) * 100 + ascii(substring(uf, 2, 1))")) \
             .withColumn("sigla_uf", F.col("uf")) \
-            .withColumn("regiao", 
-                F.when(F.col("uf").isin(["AC", "AP", "AM", "PA", "RO", "RR", "TO"]), "Norte")
-                 .when(F.col("uf").isin(["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"]), "Nordeste")
-                 .when(F.col("uf").isin(["GO", "MT", "MS", "DF"]), "Centro-Oeste")
-                 .when(F.col("uf").isin(["ES", "MG", "RJ", "SP"]), "Sudeste")
-                 .when(F.col("uf").isin(["PR", "RS", "SC"]), "Sul")
-                 .otherwise(F.lit(None))
-            ) \
+            .withColumn("regiao", map_regioes[F.col("uf")]) \
             .withColumn("nome_uf", map_ufs[F.col("uf")]) \
             .filter(F.col("nome_uf").isNotNull()) \
             .withColumn("sk_pais", F.lit(105)) \
