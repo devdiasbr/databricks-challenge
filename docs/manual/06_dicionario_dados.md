@@ -11,24 +11,26 @@ Este documento descreve detalhadamente as tabelas e colunas disponíveis na cama
 1.  [Fato Balanço Comercial (`ft_balanco_comercial`)](#1-fato-balanço-comercial-ft_balanco_comercial)
 2.  [Dimensão Data (`dim_data`)](#2-dimensão-data-dim_data)
 3.  [Dimensão NCM (`dim_ncm`)](#3-dimensão-ncm-dim_ncm)
-4.  [Dimensão Localidade (`dim_localidade`)](#4-dimensão-localidade-dim_localidade)
-5.  [Dimensão Via Transporte (`dim_via_transporte`)](#5-dimensão-via-transporte-dim_via_transporte)
+4.  [Dimensão Países (`dim_paises`)](#4-dimensão-países-dim_paises)
+5.  [Dimensão UFs (`dim_ufs`)](#5-dimensão-ufs-dim_ufs)
+6.  [Dimensão Via Transporte (`dim_via_transporte`)](#6-dimensão-via-transporte-dim_via_transporte)
 
 ---
 
 ## 1. Fato Balanço Comercial (`ft_balanco_comercial`)
 
 Tabela central que unifica transações de Importação e Exportação.
-*   **Granularidade**: Uma linha por NCM, País/UF, Via e Mês.
-*   **Particionamento**: `sk_data` (Mês/Ano).
+*   **Granularidade**: Uma linha por NCM, País, UF, Via e Mês.
+*   **Particionamento**: `tipo_movimentacao` (EXPORTACAO/IMPORTACAO).
 
 | Coluna | Tipo | Chave | Descrição | Exemplo |
 | :--- | :--- | :---: | :--- | :--- |
 | `sk_ncm` | `BIGINT` | FK | Chave substituta para o produto (NCM). | `1012100` |
-| `sk_localidade` | `BIGINT` | FK | Chave substituta para a localidade (País + UF). | `760083` |
+| `sk_pais` | `BIGINT` | FK | Chave substituta para o país. | `76` |
+| `sk_uf` | `BIGINT` | FK | Chave substituta para a UF (apenas Brasil). | `8380` |
 | `sk_via_transporte` | `BIGINT` | FK | Chave substituta para a via de transporte. | `1` |
 | `sk_data` | `BIGINT` | FK | Chave substituta para o período (AAAAMM). | `202401` |
-| `tipo_movimentacao` | `STRING` | - | Indica se é 'IMPORTACAO' ou 'EXPORTACAO'. | `EXPORTACAO` |
+| `tipo_movimentacao` | `STRING` | PK | Indica se é 'EXPORTACAO' ou 'IMPORTACAO'. | `EXPORTACAO` |
 | `valor_fob` | `DECIMAL(18,2)` | - | Valor da mercadoria em Dólares Americanos (FOB). | `1500.50` |
 | `quantidade` | `DECIMAL(18,2)` | - | Quantidade estatística da mercadoria. | `100.00` |
 | `kg_liquido` | `DECIMAL(18,2)` | - | Peso líquido da mercadoria em KG. | `120.50` |
@@ -128,39 +130,66 @@ LIMIT 10;
 
 ---
 
-## 4. Dimensão Localidade (`dim_localidade`)
+## 4. Dimensão Países (`dim_paises`)
 
-Normalização geográfica combinando Países e Unidades Federativas (UFs).
-*   **Lógica da Chave**: `(codigo_pais * 1000) + ascii(uf)`.
+Dados normalizados de países e blocos econômicos.
 
 | Coluna | Tipo | Chave | Descrição | Exemplo |
 | :--- | :--- | :---: | :--- | :--- |
-| `sk_localidade` | `BIGINT` | PK | Chave primária composta. | `760083` |
-| `pais` | `STRING` | - | Nome do país (destino ou origem). | `Brasil` |
-| `uf` | `STRING` | - | Sigla da Unidade Federativa (apenas para Brasil, senão 'XX'). | `SP` |
-| `regiao` | `STRING` | - | Região geográfica do Brasil (Norte, Sul, etc.) ou 'Internacional'. | `Sudeste` |
-| `bloco_pais` | `STRING` | - | Bloco econômico ao qual o país pertence (ex: Mercosul, UE). | `Mercosul` |
+| `sk_pais` | `BIGINT` | PK | Chave primária (código do país). | `76` |
+| `codigo_pais` | `INT` | - | Código original do país. | `76` |
+| `sigla_pais` | `STRING` | - | Sigla do país (ex: BRA). | `BRA` |
+| `nome_pais` | `STRING` | - | Nome completo do país. | `Brasil` |
+| `bloco_economico` | `STRING` | - | Bloco econômico ao qual o país pertence (ex: Mercosul, UE). | `Mercosul` |
 
-### Exemplo de Uso: Análise de Parceiros Comerciais (Importação)
+### Exemplo de Uso: Análise de Parceiros Comerciais
 
 Analisa de quais países o Brasil mais importa mercadorias.
 
 ```sql
 SELECT 
-    l.pais,
-    l.bloco_pais,
-    SUM(f.valor_fob) as valor_total_importado,
-    AVG(f.valor_unitario) as preco_medio_item
+    p.nome_pais,
+    p.bloco_economico,
+    SUM(f.valor_fob) as valor_total_importado
 FROM gold.ft_balanco_comercial f
-JOIN gold.dim_localidade l ON f.sk_localidade = l.sk_localidade
-WHERE f.flag_importacao = 1 -- Apenas Importações
-GROUP BY l.pais, l.bloco_pais
+JOIN gold.dim_paises p ON f.sk_pais = p.sk_pais
+WHERE f.flag_importacao = 1
+GROUP BY p.nome_pais, p.bloco_economico
 ORDER BY valor_total_importado DESC;
 ```
 
 ---
 
-## 5. Dimensão Via Transporte (`dim_via_transporte`)
+## 5. Dimensão UFs (`dim_ufs`)
+
+Unidades Federativas do Brasil e suas regiões.
+
+| Coluna | Tipo | Chave | Descrição | Exemplo |
+| :--- | :--- | :---: | :--- | :--- |
+| `sk_uf` | `BIGINT` | PK | Chave primária gerada via hash da sigla. | `8380` |
+| `sigla_uf` | `STRING` | - | Sigla da UF. | `SP` |
+| `nome_uf` | `STRING` | - | Nome completo da UF. | `São Paulo` |
+| `regiao` | `STRING` | - | Região geográfica (Sudeste, Norte, etc.). | `Sudeste` |
+| `sk_pais` | `BIGINT` | FK | Chave estrangeira para o país (fixo Brasil=105). | `105` |
+
+### Exemplo de Uso: Exportações por Região
+
+Analisa o volume de exportações por região geográfica do Brasil.
+
+```sql
+SELECT 
+    u.regiao,
+    SUM(f.valor_fob) as valor_total_exportado
+FROM gold.ft_balanco_comercial f
+JOIN gold.dim_ufs u ON f.sk_uf = u.sk_uf
+WHERE f.flag_exportacao = 1
+GROUP BY u.regiao
+ORDER BY valor_total_exportado DESC;
+```
+
+---
+
+## 6. Dimensão Via Transporte (`dim_via_transporte`)
 
 Modal logístico utilizado na operação.
 
@@ -172,7 +201,7 @@ Modal logístico utilizado na operação.
 
 ### Exemplo de Uso: Movimentação por Via de Transporte
 
-Compara o volume financeiro e físico movimentado por cada modal (Marítimo, Aéreo, Rodoviário, etc.).
+Compara o volume financeiro e físico movimentado por cada modal.
 
 ```sql
 SELECT 

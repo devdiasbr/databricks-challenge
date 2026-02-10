@@ -151,8 +151,6 @@ def processar_gold():
     configure_azure_access(spark)
     
     # URLs base
-    # Assumindo estrutura: trusted/{container}/{tabela}
-    # O script 05 salvou em trusted/balancacomercial/{folder_name}
     account = config.TARGET_ACCOUNT
     base_url_trusted = f"wasbs://trusted@{account}.blob.core.windows.net/balancacomercial"
     
@@ -162,18 +160,19 @@ def processar_gold():
     logger.info("\n📅 Processando Dimensão Data...")
     
     try:
-        # Lê tabelas EXP e IMP (Trusted já tem nomes normalizados: ano, mes)
+        # Lê tabelas EXP e IMP
         df_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021")
         df_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021")
         
-        df_datas_exp = df_exp.select("ano", "mes").distinct()
-        df_datas_imp = df_imp.select("ano", "mes").distinct()
+        # Ajuste de colunas conforme notebook (EXP usa co_ano/co_mes, IMP usa ano/mes)
+        df_datas_exp = df_exp.select(F.col("co_ano").alias("ano"), F.col("co_mes").alias("mes")).distinct()
+        df_datas_imp = df_imp.select(F.col("ano"), F.col("mes")).distinct()
         
         df_datas = df_datas_exp.union(df_datas_imp).distinct()
         
         df_dim_data = df_datas \
             .withColumn("data", F.to_date(F.concat_ws("-", F.col("ano"), F.col("mes"), F.lit("01")))) \
-            .withColumn("sk_data", F.expr("cast(ano as long) * 100 + cast(mes as long)")) \
+            .withColumn("sk_data", F.expr("ano * 100 + mes")) \
             .withColumn("trimestre", F.ceil(F.col("mes") / 3).cast("int")) \
             .withColumn("semestre", F.ceil(F.col("mes") / 6).cast("int")) \
             .withColumn("nome_mes", 
@@ -205,18 +204,13 @@ def processar_gold():
     logger.info("\n📦 Processando Dimensão NCM...")
     
     try:
-        # Trusted: NCM (codigo_ncm, descricao_ncm_pt)
         df_ncm_base = spark.read.format("delta").load(f"{base_url_trusted}/NCM") \
             .select(
                 F.col("codigo_ncm").alias("no_cod"),
                 F.col("descricao_ncm_pt").alias("descricao_ncm")
             ).dropDuplicates(["no_cod"])
             
-        # Tentativa de carregar relacionamento CNAE (se existir em Trusted)
-        # Se não existir, cria colunas vazias para manter o schema
         try:
-            # Assumindo que pode ter sido ingerido com nome 'external_ncm_cnae' ou similar
-            # Caso não exista, o bloco except será acionado
             path_cnae = f"{base_url_trusted}/external_ncm_cnae"
             df_ncm_cnae = spark.read.format("delta").load(path_cnae) \
                 .select(
@@ -234,7 +228,6 @@ def processar_gold():
                 .withColumn("descricao_ncm_cnae", F.lit(None)) \
                 .withColumn("codigo_cnae", F.lit(None))
 
-        # Transformações Finais NCM
         df_dim_ncm = df_dim_ncm \
             .withColumn("sk_ncm", F.expr("try_cast(no_cod as bigint)")) \
             .filter(F.col("sk_ncm").isNotNull()) \
@@ -243,11 +236,12 @@ def processar_gold():
             .withColumn("cnae", F.coalesce(F.col("codigo_cnae"), F.lit("Não Informado"))) \
             .withColumn("descricao_cnae", F.coalesce(F.col("descricao_ncm_cnae"), F.lit("Não Informado"))) \
             .withColumn("setor_economico", 
-                        F.when(F.col("sk_ncm").between(1000000, 9999999), "Agropecuária")
-                         .when(F.col("sk_ncm").between(10000000, 24999999), "Indústria Extrativa")
-                         .when(F.col("sk_ncm").between(25000000, 49999999), "Indústria de Transformação")
-                         .when(F.col("sk_ncm").between(50000000, 99999999), "Outros")
-                         .otherwise("Não Classificado")) \
+                        F.when(F.col("sk_ncm").between(1000000, 14999999), "Agro – Agropecuária")
+                        .when(F.col("sk_ncm").between(25000000, 27999999), "Ind.Extr. – Industria Extrativa")
+                        .when(F.col("sk_ncm").between(15000000, 24999999) | 
+                              F.col("sk_ncm").between(28000000, 83999999), "Ind.Transf. – Indústria Transformação")
+                        .when(F.col("sk_ncm").between(84000000, 99999999), "tecnologia")
+                        .otherwise("Outros")) \
             .select("sk_ncm", "codigo_ncm", "descricao_ncm", "cnae", "descricao_cnae", "setor_economico") \
             .dropDuplicates(["sk_ncm"]) \
             .orderBy("sk_ncm")
@@ -259,89 +253,131 @@ def processar_gold():
         logger.error(f"❌ Erro em dim_ncm: {e}")
 
     # ==================================================================================
-    # 3. Dimensão Localidade (dim_localidade)
+    # 3. Dimensão Países (dim_paises) - Substitui dim_localidade
     # ==================================================================================
-    logger.info("\n🌎 Processando Dimensão Localidade...")
+    logger.info("\n🌎 Processando Dimensão Países...")
     
     try:
-        # Trusted: PAIS (codigo_pais, codigo_pais_iso3, nome_pais_pt)
-        df_paises = spark.read.format("delta").load(f"{base_url_trusted}/PAIS") \
+        df_paises_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021") \
+            .select(F.col("co_pais").alias("codigo_pais")).distinct()
+            
+        df_paises_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021") \
+            .select(F.col("codigo_pais_origem").alias("codigo_pais")).distinct()
+            
+        df_paises_unicos = df_paises_exp.union(df_paises_imp).distinct().filter(F.col("codigo_pais").isNotNull())
+        
+        df_ref_paises = spark.read.format("delta").load(f"{base_url_trusted}/PAIS") \
             .select(
                 F.col("codigo_pais"),
                 F.col("codigo_pais_iso3").alias("sigla_pais"),
                 F.col("nome_pais_pt").alias("nome_pais")
-            ).filter(F.col("codigo_pais").isNotNull())
+            )
             
-        # UFs de Origem (EXP) e Destino (IMP)
-        df_ufs_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021") \
-            .select(F.col("uf_origem").alias("uf")).distinct()
-            
-        df_ufs_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021") \
-            .select(F.col("uf_destino").alias("uf")).distinct()
-            
-        df_ufs = df_ufs_exp.union(df_ufs_imp).distinct().filter(F.col("uf").isNotNull())
-        
-        # Combinação País + UF
-        df_paises_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021") \
-            .select(
-                F.col("codigo_pais_destino").alias("codigo_pais"),
-                F.col("uf_origem").alias("uf")
-            ).distinct()
-            
-        df_paises_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021") \
-            .select(
-                F.col("codigo_pais_origem").alias("codigo_pais"),
-                F.col("uf_destino").alias("uf")
-            ).distinct()
-            
-        df_localidades = df_paises_exp.union(df_paises_imp).distinct()
-        
-        # Blocos Econômicos (PAIS_BLOCO: codigo_pais, nome_bloco_pt)
         try:
             df_bloco_pais = spark.read.format("delta").load(f"{base_url_trusted}/PAIS_BLOCO") \
                 .select(
                     F.col("codigo_pais").alias("codigo_pais_bloco"),
-                    F.col("nome_bloco_pt").alias("regiao_pais")
+                    F.col("nome_bloco_pt").alias("bloco_economico")
                 ).distinct()
         except Exception:
             logger.warning("⚠️ Tabela PAIS_BLOCO não encontrada. Seguindo sem bloco.")
             df_bloco_pais = None
 
-        # Join Final
-        df_dim_localidade = df_localidades.join(df_paises, "codigo_pais", "left")
+        df_dim_paises = df_paises_unicos.join(df_ref_paises, "codigo_pais", "left")
         
         if df_bloco_pais:
-            df_dim_localidade = df_dim_localidade.join(df_bloco_pais, df_paises.codigo_pais == df_bloco_pais.codigo_pais_bloco, "left")
+            df_dim_paises = df_dim_paises.join(df_bloco_pais, F.col("codigo_pais") == df_bloco_pais.codigo_pais_bloco, "left")
         else:
-            df_dim_localidade = df_dim_localidade.withColumn("regiao_pais", F.lit(None))
-
-        df_dim_localidade = df_dim_localidade \
-            .withColumn("sk_localidade", F.expr("cast(codigo_pais as long) * 1000 + ascii(coalesce(uf, 'XX'))")) \
-            .withColumn("bloco_pais", F.coalesce(F.col("regiao_pais"), F.lit("Não informado"))) \
-            .withColumn("regiao", 
-                        F.when(F.col("uf").isin(["AC", "AP", "AM", "PA", "RO", "RR", "TO"]), "Norte")
-                         .when(F.col("uf").isin(["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"]), "Nordeste")
-                         .when(F.col("uf").isin(["GO", "MT", "MS", "DF"]), "Centro-Oeste")
-                         .when(F.col("uf").isin(["ES", "MG", "RJ", "SP"]), "Sudeste")
-                         .when(F.col("uf").isin(["PR", "RS", "SC"]), "Sul")
-                         .otherwise("Internacional")) \
-            .select("sk_localidade", "bloco_pais", F.col("nome_pais").alias("pais"), F.coalesce(F.col("uf"), F.lit("XX")).alias("uf"), "regiao") \
-            .dropDuplicates(["sk_localidade"]) \
-            .orderBy("sk_localidade")
+            df_dim_paises = df_dim_paises.withColumn("bloco_economico", F.lit(None))
             
-        df_dim_localidade = adicionar_metadados(df_dim_localidade)
-        salvar_tabela_gold(df_dim_localidade, "dim_localidade")
+        df_dim_paises = df_dim_paises \
+            .withColumn("sk_pais", F.col("codigo_pais")) \
+            .withColumn("sigla_pais", F.coalesce(F.col("sigla_pais"), F.lit("N/A"))) \
+            .withColumn("nome_pais", F.coalesce(F.col("nome_pais"), F.lit("Não Informado"))) \
+            .withColumn("bloco_economico", F.coalesce(F.col("bloco_economico"), F.lit("Não Informado"))) \
+            .select("sk_pais", "codigo_pais", "sigla_pais", "nome_pais", "bloco_economico") \
+            .dropDuplicates(["sk_pais"]) \
+            .orderBy("sk_pais")
+            
+        df_dim_paises = adicionar_metadados(df_dim_paises)
+        salvar_tabela_gold(df_dim_paises, "dim_paises")
         
     except Exception as e:
-        logger.error(f"❌ Erro em dim_localidade: {e}")
+        logger.error(f"❌ Erro em dim_paises: {e}")
 
     # ==================================================================================
-    # 4. Dimensão Via Transporte (dim_via_transporte)
+    # 4. Dimensão UFs (dim_ufs)
+    # ==================================================================================
+    logger.info("\n🇧🇷 Processando Dimensão UFs...")
+    
+    try:
+        df_ufs_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021") \
+            .select(F.col("sg_uf_ncm").alias("uf")).distinct()
+            
+        df_ufs_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021") \
+            .select(F.col("uf_destino").alias("uf")).distinct()
+            
+        df_ufs_unicas = df_ufs_exp.union(df_ufs_imp).distinct().filter(F.col("uf").isNotNull())
+        
+        df_dim_ufs = df_ufs_unicas \
+            .withColumn("sk_uf", F.expr("ascii(substring(uf, 1, 1)) * 100 + ascii(substring(uf, 2, 1))")) \
+            .withColumn("sigla_uf", F.col("uf")) \
+            .withColumn("regiao", 
+                F.when(F.col("uf").isin(["AC", "AP", "AM", "PA", "RO", "RR", "TO"]), "Norte")
+                 .when(F.col("uf").isin(["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"]), "Nordeste")
+                 .when(F.col("uf").isin(["GO", "MT", "MS", "DF"]), "Centro-Oeste")
+                 .when(F.col("uf").isin(["ES", "MG", "RJ", "SP"]), "Sudeste")
+                 .when(F.col("uf").isin(["PR", "RS", "SC"]), "Sul")
+                 .otherwise(F.lit(None))
+            ) \
+            .withColumn("nome_uf",
+                F.when(F.col("uf") == "AC", "Acre")
+                 .when(F.col("uf") == "AL", "Alagoas")
+                 .when(F.col("uf") == "AP", "Amapá")
+                 .when(F.col("uf") == "AM", "Amazonas")
+                 .when(F.col("uf") == "BA", "Bahia")
+                 .when(F.col("uf") == "CE", "Ceará")
+                 .when(F.col("uf") == "DF", "Distrito Federal")
+                 .when(F.col("uf") == "ES", "Espírito Santo")
+                 .when(F.col("uf") == "GO", "Goiás")
+                 .when(F.col("uf") == "MA", "Maranhão")
+                 .when(F.col("uf") == "MT", "Mato Grosso")
+                 .when(F.col("uf") == "MS", "Mato Grosso do Sul")
+                 .when(F.col("uf") == "MG", "Minas Gerais")
+                 .when(F.col("uf") == "PA", "Pará")
+                 .when(F.col("uf") == "PB", "Paraíba")
+                 .when(F.col("uf") == "PR", "Paraná")
+                 .when(F.col("uf") == "PE", "Pernambuco")
+                 .when(F.col("uf") == "PI", "Piauí")
+                 .when(F.col("uf") == "RJ", "Rio de Janeiro")
+                 .when(F.col("uf") == "RN", "Rio Grande do Norte")
+                 .when(F.col("uf") == "RS", "Rio Grande do Sul")
+                 .when(F.col("uf") == "RO", "Rondônia")
+                 .when(F.col("uf") == "RR", "Roraima")
+                 .when(F.col("uf") == "SC", "Santa Catarina")
+                 .when(F.col("uf") == "SP", "São Paulo")
+                 .when(F.col("uf") == "SE", "Sergipe")
+                 .when(F.col("uf") == "TO", "Tocantins")
+                 .otherwise(F.lit(None))
+            ) \
+            .filter(F.col("nome_uf").isNotNull()) \
+            .withColumn("sk_pais", F.lit(105)) \
+            .select("sk_uf", "sigla_uf", "nome_uf", "regiao", "sk_pais") \
+            .dropDuplicates(["sk_uf"]) \
+            .orderBy("sk_uf")
+            
+        df_dim_ufs = adicionar_metadados(df_dim_ufs)
+        salvar_tabela_gold(df_dim_ufs, "dim_ufs")
+        
+    except Exception as e:
+        logger.error(f"❌ Erro em dim_ufs: {e}")
+
+    # ==================================================================================
+    # 5. Dimensão Via Transporte (dim_via_transporte)
     # ==================================================================================
     logger.info("\n🚢 Processando Dimensão Via Transporte...")
     
     try:
-        # Trusted: VIA (codigo_via_transporte, descricao_via_transporte)
         df_ref_via = spark.read.format("delta").load(f"{base_url_trusted}/VIA") \
             .select(
                 F.col("codigo_via_transporte").alias("ref_co_via"),
@@ -349,7 +385,7 @@ def processar_gold():
             )
             
         df_vias_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021") \
-            .select(F.col("codigo_via_transporte").alias("codigo_via")).distinct()
+            .select(F.col("co_via").alias("codigo_via")).distinct()
             
         df_vias_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021") \
             .select(F.col("codigo_via_transporte").alias("codigo_via")).distinct()
@@ -369,7 +405,7 @@ def processar_gold():
         logger.error(f"❌ Erro em dim_via_transporte: {e}")
 
     # ==================================================================================
-    # 5. Tabela Fato (ft_balanco_comercial)
+    # 6. Tabela Fato (ft_balanco_comercial)
     # ==================================================================================
     logger.info("\n💰 Processando Fato Balanço Comercial...")
     
@@ -377,23 +413,25 @@ def processar_gold():
         # Exportação
         df_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021") \
             .select(
-                F.col("codigo_ncm").cast("bigint").alias("sk_ncm"),
-                F.expr("cast(codigo_pais_destino as long) * 1000 + ascii(coalesce(uf_origem, 'XX'))").alias("sk_localidade"),
-                F.col("codigo_via_transporte").cast("bigint").alias("sk_via_transporte"),
-                F.expr("cast(ano as long) * 100 + cast(mes as long)").alias("sk_data"),
+                F.col("co_ncm").cast("bigint").alias("sk_ncm"),
+                F.col("co_pais").cast("bigint").alias("sk_pais"),
+                F.expr("ascii(substring(coalesce(sg_uf_ncm, 'XX'), 1, 1)) * 100 + ascii(substring(coalesce(sg_uf_ncm, 'XX'), 2, 1))").cast("bigint").alias("sk_uf"),
+                F.col("co_via").cast("bigint").alias("sk_via_transporte"),
+                F.expr("co_ano * 100 + co_mes").cast("bigint").alias("sk_data"),
                 F.lit("EXPORTACAO").alias("tipo_movimentacao"),
-                F.col("valor_fob_usd").cast("decimal(18,2)").alias("valor_fob"),
-                F.col("quantidade_estatistica").cast("decimal(18,2)").alias("quantidade"),
-                F.col("peso_liquido_kg").cast("decimal(18,2)").alias("kg_liquido")
+                F.col("vl_fob").cast("decimal(18,2)").alias("valor_fob"),
+                F.col("qt_estat").cast("decimal(18,2)").alias("quantidade"),
+                F.col("kg_liquido").cast("decimal(18,2)").alias("kg_liquido")
             )
             
         # Importação
         df_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021") \
             .select(
                 F.col("codigo_ncm").cast("bigint").alias("sk_ncm"),
-                F.expr("cast(codigo_pais_origem as long) * 1000 + ascii(coalesce(uf_destino, 'XX'))").alias("sk_localidade"),
+                F.col("codigo_pais_origem").cast("bigint").alias("sk_pais"),
+                F.expr("ascii(substring(coalesce(uf_destino, 'XX'), 1, 1)) * 100 + ascii(substring(coalesce(uf_destino, 'XX'), 2, 1))").cast("bigint").alias("sk_uf"),
                 F.col("codigo_via_transporte").cast("bigint").alias("sk_via_transporte"),
-                F.expr("cast(ano as long) * 100 + cast(mes as long)").alias("sk_data"),
+                F.expr("ano * 100 + mes").cast("bigint").alias("sk_data"),
                 F.lit("IMPORTACAO").alias("tipo_movimentacao"),
                 F.col("valor_fob_usd").cast("decimal(18,2)").alias("valor_fob"),
                 F.col("quantidade_estatistica").cast("decimal(18,2)").alias("quantidade"),
@@ -407,14 +445,14 @@ def processar_gold():
         # Métricas Calculadas
         df_ft_balanco = df_ft_balanco \
             .withColumn("valor_unitario", 
-                        F.when(F.col("quantidade") > 0, F.col("valor_fob") / F.col("quantidade")).otherwise(F.lit(0))) \
+                        F.when(F.col("quantidade") > 0, F.round(F.col("valor_fob") / F.col("quantidade"), 4)).otherwise(F.lit(0))) \
             .withColumn("preco_kg", 
-                        F.when(F.col("kg_liquido") > 0, F.col("valor_fob") / F.col("kg_liquido")).otherwise(F.lit(0))) \
+                        F.when(F.col("kg_liquido") > 0, F.round(F.col("valor_fob") / F.col("kg_liquido"), 4)).otherwise(F.lit(0))) \
             .withColumn("flag_exportacao", F.when(F.col("tipo_movimentacao") == "EXPORTACAO", 1).otherwise(0)) \
             .withColumn("flag_importacao", F.when(F.col("tipo_movimentacao") == "IMPORTACAO", 1).otherwise(0))
             
         df_ft_balanco = adicionar_metadados(df_ft_balanco)
-        salvar_tabela_gold(df_ft_balanco, "ft_balanco_comercial", particionar_por=["sk_data"])
+        salvar_tabela_gold(df_ft_balanco, "ft_balanco_comercial", particionar_por=["tipo_movimentacao"])
         
     except Exception as e:
         logger.error(f"❌ Erro em ft_balanco_comercial: {e}")

@@ -44,10 +44,11 @@ As tabelas foram desenhadas para responder perguntas de negócio como *"Qual o v
 
 | Tabela | Tipo | Descrição | Granularidade |
 | :--- | :--- | :--- | :--- |
-| **ft_balanco_comercial** | Fato | Transações de Importação e Exportação unificadas. | NCM + País/UF + Via + Mês |
+| **ft_balanco_comercial** | Fato | Transações de Importação e Exportação unificadas. | NCM + País + UF + Via + Mês |
 | **dim_data** | Dimensão | Calendário fiscal e sazonal (Ano, Mês, Trimestre). | Mês |
 | **dim_ncm** | Dimensão | Detalhes do Produto, CNAE e Setor Econômico. | Código NCM |
-| **dim_localidade** | Dimensão | Geografia (País, Bloco Econômico, UF, Região). | País + UF |
+| **dim_paises** | Dimensão | Países e Blocos Econômicos. | País |
+| **dim_ufs** | Dimensão | Unidades Federativas e Regiões do Brasil. | UF |
 | **dim_via_transporte** | Dimensão | Modal logístico (Marítima, Aérea, etc.). | Código Via |
 
 ### 📐 Diagrama de Entidade-Relacionamento (DER)
@@ -58,7 +59,8 @@ Abaixo apresentamos a modelagem física da camada Gold, ilustrando as chaves pri
 erDiagram
     ft_balanco_comercial {
         bigint sk_ncm FK
-        bigint sk_localidade FK
+        bigint sk_pais FK
+        bigint sk_uf FK
         bigint sk_via_transporte FK
         bigint sk_data FK
         string tipo_movimentacao
@@ -91,12 +93,20 @@ erDiagram
         string setor_economico
     }
 
-    dim_localidade {
-        bigint sk_localidade PK
-        string pais
-        string uf
+    dim_paises {
+        bigint sk_pais PK
+        string codigo_pais
+        string sigla_pais
+        string nome_pais
+        string bloco_economico
+    }
+
+    dim_ufs {
+        bigint sk_uf PK
+        string sigla_uf
+        string nome_uf
         string regiao
-        string bloco_pais
+        bigint sk_pais FK
     }
 
     dim_via_transporte {
@@ -107,8 +117,10 @@ erDiagram
 
     dim_data ||--o{ ft_balanco_comercial : "filtra por período"
     dim_ncm ||--o{ ft_balanco_comercial : "descreve produto"
-    dim_localidade ||--o{ ft_balanco_comercial : "localiza origem/destino"
+    dim_paises ||--o{ ft_balanco_comercial : "localiza país parceiro"
+    dim_ufs ||--o{ ft_balanco_comercial : "localiza UF origem/destino"
     dim_via_transporte ||--o{ ft_balanco_comercial : "transporta via"
+    dim_paises ||--o{ dim_ufs : "contém"
 ```
 
 ## 🔄 Fluxo de Dados
