@@ -60,7 +60,6 @@ if not logger.handlers:
 
 # Constantes de Auditoria
 CAMPO_ATUALIZACAO = "dt_atualizacao"
-USUARIO_ATUALIZACAO = "system@pipeline" # Idealmente viria de config ou env
 
 def get_spark_session():
     """Cria e configura a sessão Spark com suporte a Delta e Azure."""
@@ -105,8 +104,7 @@ def configure_azure_access(spark):
 def adicionar_metadados(df):
     """Adiciona colunas de auditoria."""
     return df \
-        .withColumn(CAMPO_ATUALIZACAO, F.current_timestamp()) \
-        .withColumn("usuario_atualizacao", F.lit(USUARIO_ATUALIZACAO))
+        .withColumn(CAMPO_ATUALIZACAO, F.current_timestamp())
 
 def salvar_tabela_gold(df, nome_tabela, particionar_por=None):
     """Salva a tabela na camada Refined (Gold) em formato Delta."""
