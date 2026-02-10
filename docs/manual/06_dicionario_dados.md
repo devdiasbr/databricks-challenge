@@ -30,7 +30,7 @@ Tabela central que unifica transações de Importação e Exportação.
 | `sk_uf` | `BIGINT` | FK | Chave substituta para a UF (apenas Brasil). | `8380` |
 | `sk_via_transporte` | `BIGINT` | FK | Chave substituta para a via de transporte. | `1` |
 | `sk_data` | `BIGINT` | FK | Chave substituta para o período (AAAAMM). | `202401` |
-| `tipo_movimentacao` | `STRING` | PK | Indica se é 'EXPORTACAO' ou 'IMPORTACAO'. | `EXPORTACAO` |
+| `tipo_movimentacao` | `STRING` | - | Indica se é 'EXPORTACAO' ou 'IMPORTACAO' (Partição). | `EXPORTACAO` |
 | `valor_fob` | `DECIMAL(18,2)` | - | Valor da mercadoria em Dólares Americanos (FOB). | `1500.50` |
 | `quantidade` | `DECIMAL(18,2)` | - | Quantidade estatística da mercadoria. | `100.00` |
 | `kg_liquido` | `DECIMAL(18,2)` | - | Peso líquido da mercadoria em KG. | `120.50` |
