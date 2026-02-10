@@ -160,6 +160,14 @@ def processar_gold():
     logger.info("\n📅 Processando Dimensão Data...")
     
     try:
+        # Mapeamento de Meses
+        meses_dict = {
+            1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril",
+            5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto",
+            9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"
+        }
+        map_meses = F.create_map([F.lit(x) for i in meses_dict.items() for x in i])
+
         # Lê tabelas EXP e IMP
         df_exp = spark.read.format("delta").load(f"{base_url_trusted}/exp")
         df_imp = spark.read.format("delta").load(f"{base_url_trusted}/imp")
@@ -175,20 +183,7 @@ def processar_gold():
             .withColumn("sk_data", F.expr("ano * 100 + mes")) \
             .withColumn("trimestre", F.ceil(F.col("mes") / 3).cast("int")) \
             .withColumn("semestre", F.ceil(F.col("mes") / 6).cast("int")) \
-            .withColumn("nome_mes", 
-                        F.when(F.col("mes") == 1, "Janeiro")
-                         .when(F.col("mes") == 2, "Fevereiro")
-                         .when(F.col("mes") == 3, "Março")
-                         .when(F.col("mes") == 4, "Abril")
-                         .when(F.col("mes") == 5, "Maio")
-                         .when(F.col("mes") == 6, "Junho")
-                         .when(F.col("mes") == 7, "Julho")
-                         .when(F.col("mes") == 8, "Agosto")
-                         .when(F.col("mes") == 9, "Setembro")
-                         .when(F.col("mes") == 10, "Outubro")
-                         .when(F.col("mes") == 11, "Novembro")
-                         .when(F.col("mes") == 12, "Dezembro")
-                         .otherwise("Desconhecido")) \
+            .withColumn("nome_mes", F.coalesce(map_meses[F.col("mes")], F.lit("Desconhecido"))) \
             .select("sk_data", "data", "ano", "mes", "trimestre", "semestre", "nome_mes") \
             .orderBy("sk_data")
             
@@ -311,6 +306,19 @@ def processar_gold():
     logger.info("\n🇧🇷 Processando Dimensão UFs...")
     
     try:
+        # Mapeamento de UFs
+        ufs_dict = {
+            "AC": "Acre", "AL": "Alagoas", "AP": "Amapá", "AM": "Amazonas",
+            "BA": "Bahia", "CE": "Ceará", "DF": "Distrito Federal", "ES": "Espírito Santo",
+            "GO": "Goiás", "MA": "Maranhão", "MT": "Mato Grosso", "MS": "Mato Grosso do Sul",
+            "MG": "Minas Gerais", "PA": "Pará", "PB": "Paraíba", "PR": "Paraná",
+            "PE": "Pernambuco", "PI": "Piauí", "RJ": "Rio de Janeiro", "RN": "Rio Grande do Norte",
+            "RS": "Rio Grande do Sul", "RO": "Rondônia", "RR": "Roraima", "SC": "Santa Catarina",
+            "SP": "São Paulo", "SE": "Sergipe", "TO": "Tocantins"
+        }
+        # Cria mapa do Spark para lookup eficiente
+        map_ufs = F.create_map([F.lit(x) for i in ufs_dict.items() for x in i])
+
         df_ufs_exp = spark.read.format("delta").load(f"{base_url_trusted}/exp") \
             .select(F.col("sg_uf_ncm").alias("uf")).distinct()
             
@@ -330,36 +338,7 @@ def processar_gold():
                  .when(F.col("uf").isin(["PR", "RS", "SC"]), "Sul")
                  .otherwise(F.lit(None))
             ) \
-            .withColumn("nome_uf",
-                F.when(F.col("uf") == "AC", "Acre")
-                 .when(F.col("uf") == "AL", "Alagoas")
-                 .when(F.col("uf") == "AP", "Amapá")
-                 .when(F.col("uf") == "AM", "Amazonas")
-                 .when(F.col("uf") == "BA", "Bahia")
-                 .when(F.col("uf") == "CE", "Ceará")
-                 .when(F.col("uf") == "DF", "Distrito Federal")
-                 .when(F.col("uf") == "ES", "Espírito Santo")
-                 .when(F.col("uf") == "GO", "Goiás")
-                 .when(F.col("uf") == "MA", "Maranhão")
-                 .when(F.col("uf") == "MT", "Mato Grosso")
-                 .when(F.col("uf") == "MS", "Mato Grosso do Sul")
-                 .when(F.col("uf") == "MG", "Minas Gerais")
-                 .when(F.col("uf") == "PA", "Pará")
-                 .when(F.col("uf") == "PB", "Paraíba")
-                 .when(F.col("uf") == "PR", "Paraná")
-                 .when(F.col("uf") == "PE", "Pernambuco")
-                 .when(F.col("uf") == "PI", "Piauí")
-                 .when(F.col("uf") == "RJ", "Rio de Janeiro")
-                 .when(F.col("uf") == "RN", "Rio Grande do Norte")
-                 .when(F.col("uf") == "RS", "Rio Grande do Sul")
-                 .when(F.col("uf") == "RO", "Rondônia")
-                 .when(F.col("uf") == "RR", "Roraima")
-                 .when(F.col("uf") == "SC", "Santa Catarina")
-                 .when(F.col("uf") == "SP", "São Paulo")
-                 .when(F.col("uf") == "SE", "Sergipe")
-                 .when(F.col("uf") == "TO", "Tocantins")
-                 .otherwise(F.lit(None))
-            ) \
+            .withColumn("nome_uf", map_ufs[F.col("uf")]) \
             .filter(F.col("nome_uf").isNotNull()) \
             .withColumn("sk_pais", F.lit(105)) \
             .select("sk_uf", "sigla_uf", "nome_uf", "regiao", "sk_pais") \
