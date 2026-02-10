@@ -161,8 +161,8 @@ def processar_gold():
     
     try:
         # Lê tabelas EXP e IMP
-        df_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021")
-        df_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021")
+        df_exp = spark.read.format("delta").load(f"{base_url_trusted}/exp")
+        df_imp = spark.read.format("delta").load(f"{base_url_trusted}/imp")
         
         # Ajuste de colunas conforme notebook (EXP usa co_ano/co_mes, IMP usa ano/mes)
         df_datas_exp = df_exp.select(F.col("co_ano").alias("ano"), F.col("co_mes").alias("mes")).distinct()
@@ -204,7 +204,7 @@ def processar_gold():
     logger.info("\n📦 Processando Dimensão NCM...")
     
     try:
-        df_ncm_base = spark.read.format("delta").load(f"{base_url_trusted}/NCM") \
+        df_ncm_base = spark.read.format("delta").load(f"{base_url_trusted}/ncm") \
             .select(
                 F.col("codigo_ncm").alias("no_cod"),
                 F.col("descricao_ncm_pt").alias("descricao_ncm")
@@ -258,15 +258,15 @@ def processar_gold():
     logger.info("\n🌎 Processando Dimensão Países...")
     
     try:
-        df_paises_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021") \
+        df_paises_exp = spark.read.format("delta").load(f"{base_url_trusted}/exp") \
             .select(F.col("co_pais").alias("codigo_pais")).distinct()
             
-        df_paises_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021") \
+        df_paises_imp = spark.read.format("delta").load(f"{base_url_trusted}/imp") \
             .select(F.col("codigo_pais_origem").alias("codigo_pais")).distinct()
             
         df_paises_unicos = df_paises_exp.union(df_paises_imp).distinct().filter(F.col("codigo_pais").isNotNull())
         
-        df_ref_paises = spark.read.format("delta").load(f"{base_url_trusted}/PAIS") \
+        df_ref_paises = spark.read.format("delta").load(f"{base_url_trusted}/pais") \
             .select(
                 F.col("codigo_pais"),
                 F.col("codigo_pais_iso3").alias("sigla_pais"),
@@ -274,7 +274,7 @@ def processar_gold():
             )
             
         try:
-            df_bloco_pais = spark.read.format("delta").load(f"{base_url_trusted}/PAIS_BLOCO") \
+            df_bloco_pais = spark.read.format("delta").load(f"{base_url_trusted}/pais_bloco") \
                 .select(
                     F.col("codigo_pais").alias("codigo_pais_bloco"),
                     F.col("nome_bloco_pt").alias("bloco_economico")
@@ -311,10 +311,10 @@ def processar_gold():
     logger.info("\n🇧🇷 Processando Dimensão UFs...")
     
     try:
-        df_ufs_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021") \
+        df_ufs_exp = spark.read.format("delta").load(f"{base_url_trusted}/exp") \
             .select(F.col("sg_uf_ncm").alias("uf")).distinct()
             
-        df_ufs_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021") \
+        df_ufs_imp = spark.read.format("delta").load(f"{base_url_trusted}/imp") \
             .select(F.col("uf_destino").alias("uf")).distinct()
             
         df_ufs_unicas = df_ufs_exp.union(df_ufs_imp).distinct().filter(F.col("uf").isNotNull())
@@ -378,16 +378,16 @@ def processar_gold():
     logger.info("\n🚢 Processando Dimensão Via Transporte...")
     
     try:
-        df_ref_via = spark.read.format("delta").load(f"{base_url_trusted}/VIA") \
+        df_ref_via = spark.read.format("delta").load(f"{base_url_trusted}/via") \
             .select(
                 F.col("codigo_via_transporte").alias("ref_co_via"),
                 F.col("descricao_via_transporte").alias("nome_via")
             )
             
-        df_vias_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021") \
+        df_vias_exp = spark.read.format("delta").load(f"{base_url_trusted}/exp") \
             .select(F.col("co_via").alias("codigo_via")).distinct()
             
-        df_vias_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021") \
+        df_vias_imp = spark.read.format("delta").load(f"{base_url_trusted}/imp") \
             .select(F.col("codigo_via_transporte").alias("codigo_via")).distinct()
             
         df_vias_unicas = df_vias_exp.union(df_vias_imp).distinct().filter(F.col("codigo_via").isNotNull())
@@ -411,7 +411,7 @@ def processar_gold():
     
     try:
         # Exportação
-        df_exp = spark.read.format("delta").load(f"{base_url_trusted}/EXP_2021") \
+        df_exp = spark.read.format("delta").load(f"{base_url_trusted}/exp") \
             .select(
                 F.col("co_ncm").cast("bigint").alias("sk_ncm"),
                 F.col("co_pais").cast("bigint").alias("sk_pais"),
@@ -425,7 +425,7 @@ def processar_gold():
             )
             
         # Importação
-        df_imp = spark.read.format("delta").load(f"{base_url_trusted}/IMP_2021") \
+        df_imp = spark.read.format("delta").load(f"{base_url_trusted}/imp") \
             .select(
                 F.col("codigo_ncm").cast("bigint").alias("sk_ncm"),
                 F.col("codigo_pais_origem").cast("bigint").alias("sk_pais"),
