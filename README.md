@@ -67,10 +67,10 @@ graph LR
 
 ## 🚀 Funcionalidades e Diferenciais
 
-*   **Ingestão Híbrida Inteligente**: Os scripts detectam automaticamente se estão rodando no **Databricks** ou **Localmente**, ajustando caminhos e métodos de autenticação.
+*   **Databricks Native**: Otimizado para execução no Azure Databricks, utilizando recursos nativos como `dbutils` e `Secret Scopes`.
+*   **Segurança via Key Vault**: Integração segura com Azure Key Vault para gerenciamento de credenciais, eliminando chaves hardcoded.
 *   **Arquitetura Medallion Completa**: Pipeline implementado de ponta a ponta (Raw -> Trusted -> Refined).
-*   **Observabilidade**: Logs detalhados são enviados para o console (com barras de progresso `tqdm`) e persistidos.
-*   **Suporte a Windows**: O projeto baixa e configura automaticamente o `winutils.exe` (Hadoop binaries) para permitir a execução do Spark no Windows sem dores de cabeça.
+*   **Observabilidade**: Logs detalhados são enviados para o console e persistidos.
 *   **Atomicidade**: Uso de operações atômicas do Delta Lake (`overwrite` mode) e comandos `OPTIMIZE/VACUUM` para performance.
 *   **Otimização Automática**: Configuração explícita de `OPTIMIZE` (Target Size: 10MB) e `VACUUM` (Retenção: 60 dias) para manutenção saudável do Data Lake.
 
@@ -96,9 +96,8 @@ Para garantir alta performance de leitura e controle de custos de armazenamento,
 
 ```text
 /
-├── hadoop/                     # Binários do Hadoop (winutils) gerenciados automaticamente
 ├── src/
-│   ├── scripts/                # Scripts do Pipeline (Execução Sequencial)
+│   ├── scripts/                # Scripts do Pipeline (Databricks Notebooks)
 │   │   ├── 01_listagem_*.py    # 🔍 Diagnóstico: Lista arquivos na origem
 │   │   ├── 02_setup_*.py       # 🛠️ Setup: Cria e valida containers de destino (Raw/Trusted/Refined)
 │   │   ├── 03_ingestao_*.py    # 📥 Bronze: Ingestão Balança Comercial
@@ -118,39 +117,30 @@ Para garantir alta performance de leitura e controle de custos de armazenamento,
 
 ## 🛠️ Como Executar
 
+Este pipeline foi desenhado para ser executado exclusivamente no **Azure Databricks**.
+
 ### 1. Pré-requisitos
-*   Python 3.8 ou superior.
-*   Java 8 ou 11 (JRE/JDK) instalado e configurado no PATH.
-*   Acesso aos containers do Azure Blob Storage (SAS Tokens).
+*   Cluster Azure Databricks (Runtime 10.4 LTS ou superior recomendado).
+*   Acesso aos containers do Azure Blob Storage configurado via **Azure Key Vault**.
+*   **Secret Scope** criado no Databricks apontando para o Key Vault (nome padrão: `databricks-scope-4`).
 
-### 2. Configuração (.env)
-Crie um arquivo `.env` na raiz baseado no `.env.example` e preencha suas credenciais:
+### 2. Configuração
+Certifique-se de que os segredos abaixo estão configurados no Key Vault:
+*   `secret-landing`: Chave de acesso (Account Key) da Storage Account de Landing.
 
-```ini
-BALANCA_ACCOUNT_URL=https://seu-storage.blob.core.windows.net
-AZURE_STORAGE_SAS_TOKEN_BALANCA="?sv=..."
-# ... (ver .env.example para lista completa)
-```
+O arquivo `src/utils/config.py` gerencia automaticamente a recuperação desses segredos.
 
 ### 3. Execução do Pipeline
-Os scripts devem ser executados sequencialmente para garantir a dependência dos dados:
+Importe os scripts da pasta `src/scripts` para o seu Workspace do Databricks e execute-os como Notebooks ou Jobs na seguinte ordem:
 
-```bash
-# 1. Diagnóstico e Setup
-python src/scripts/01_listagem_arquivos_azure.py
-python src/scripts/02_setup_validacao_targets.py
-
-# 2. Camada Bronze (Ingestão)
-python src/scripts/03_ingestao_bronze_balanca.py
-python src/scripts/04_ingestao_bronze_cnpj.py
-
-# 3. Camada Silver (Transformação)
-python src/scripts/05_transformacao_silver_balanca.py
-python src/scripts/06_transformacao_silver_cnpj.py
-
-# 4. Camada Gold (Refinamento)
-python src/scripts/07_transformacao_gold.py
-```
+1.  **Setup e Ingestão (Bronze)**:
+    *   `03_ingestao_bronze_balanca`
+    *   `04_ingestao_bronze_cnpj`
+2.  **Transformação (Silver)**:
+    *   `05_transformacao_silver_balanca`
+    *   `06_transformacao_silver_cnpj`
+3.  **Refinamento (Gold)**:
+    *   `07_transformacao_gold`
 
 ---
 
@@ -162,17 +152,11 @@ Utilizamos Delta Lake nas camadas Silver e Gold para garantir **ACID Transaction
 ### Tratamento de Arquivos ZIP (CNPJ)
 Os dados do CNPJ vêm em arquivos ZIP massivos contendo CSVs. Nossa estratégia de ingestão (Script 04):
 1.  Faz o download em streaming (chunks) para evitar estouro de memória.
-2.  Extrai localmente em área temporária.
+2.  Extrai localmente em área temporária do Driver.
 3.  Lê com Spark e converte imediatamente para Parquet/Delta, descartando o CSV bruto.
 
-### Fallback de Caminhos (`__file__`)
-Para suportar execução local (VS Code) e remota (Databricks Notebooks), usamos um padrão robusto de resolução de caminhos:
-```python
-try:
-    base_dir = os.path.dirname(os.path.abspath(__file__)) # Funciona local
-except NameError:
-    base_dir = os.getcwd() # Funciona no Databricks
-```
+### Segurança (Key Vault)
+A segurança foi priorizada removendo tokens SAS hardcoded. O acesso ao Storage é feito exclusivamente através de credenciais gerenciadas no Azure Key Vault e acessadas via Databricks Secret Scopes.
 
 ---
 
@@ -181,8 +165,8 @@ except NameError:
 | Erro | Causa Provável | Solução |
 |------|----------------|---------|
 | `DirectoryIsNotEmpty` | Conflito na sobrescrita de diretórios no Blob Storage. | O código já foi atualizado para usar `.mode("overwrite")` do Delta. Não apague pastas manualmente durante a execução. |
-| `Winutils not found` | Falta de binários do Hadoop no Windows. | O script baixa o `winutils.exe` automaticamente. Se falhar, verifique sua conexão ou permissões na pasta `hadoop/`. |
-| `403 Forbidden` | Token SAS expirado ou incorreto. | Verifique o `.env`. O token deve começar com `?` e não deve conter quebras de linha. |
+| `DBUtils not available` | Execução fora do Databricks. | Este projeto requer ambiente Databricks. |
+| `Secret not found` | Segredo ausente no Key Vault ou Scope incorreto. | Verifique se o secret scope `databricks-scope-4` existe e contém a chave `secret-landing`. |
 
 ---
 
