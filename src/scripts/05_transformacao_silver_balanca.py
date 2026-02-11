@@ -18,34 +18,23 @@ from azure.storage.blob import ContainerClient
 # Carrega variáveis de ambiente
 load_dotenv()
 
-# Configuração robusta de caminhos (Híbrido Local/Databricks)
+# Configuração de caminhos
 try:
     base_dir = os.path.dirname(os.path.abspath(__file__))
 except NameError:
     base_dir = os.getcwd()
 
-# Navega para cima até encontrar a pasta 'src' para definir o project_root
 project_root = base_dir
-while not os.path.exists(os.path.join(project_root, 'src')) and project_root != os.path.dirname(project_root):
+# Ajuste simples para encontrar a raiz do projeto
+if os.path.basename(project_root) == "scripts":
+    project_root = os.path.dirname(os.path.dirname(project_root))
+elif os.path.basename(project_root) == "src":
     project_root = os.path.dirname(project_root)
 
-# Fallback: se não achou src, usa o base_dir (assume execução na raiz ou flat)
-if not os.path.exists(os.path.join(project_root, 'src')):
-    project_root = base_dir
-
-# Adiciona src ao path para importar utils
+# Adiciona src ao path
 src_path = os.path.join(project_root, 'src')
 if src_path not in sys.path:
     sys.path.append(src_path)
-
-hadoop_home = os.path.join(project_root, 'hadoop')
-if os.path.exists(hadoop_home):
-    os.environ['HADOOP_HOME'] = hadoop_home
-    # Adiciona bin ao PATH se não estiver
-    hadoop_bin = os.path.join(hadoop_home, 'bin')
-    if hadoop_bin not in os.environ['PATH']:
-        os.environ['PATH'] += os.pathsep + hadoop_bin
-    # print(f"✅ HADOOP_HOME configurado: {hadoop_home}")
 
 import utils.config as config
 from utils.transformations import BaseTransform, normalize_column_name
@@ -60,96 +49,49 @@ if not logger.handlers:
         handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S'))
         logger.addHandler(handler)
     except Exception:
-        # Fallback para handler padrão se TqdmLoggingHandler falhar
         handler = logging.StreamHandler(sys.stdout)
         logger.addHandler(handler)
 
 # COMMAND ----------
 
 def get_spark_session():
-    """Cria e configura a sessão Spark com suporte a Delta e Azure."""
-    builder = SparkSession.builder \
-        .appName("BronzeToSilver_BalancaComercial") \
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-        .config("spark.jars.packages", "org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6,io.delta:delta-spark_2.12:3.0.0") \
-        .config("spark.driver.extraJavaOptions", "-Divy.message.logger.level=4 -Dlog4j.rootCategory=ERROR") \
-        .config("spark.sql.parquet.enableVectorizedReader", "false") \
-        .config("spark.sql.parquet.int96RebaseModeInRead", "CORRECTED") \
-        .config("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED") \
-        .config("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED") \
-        .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
-        .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
-        .config("spark.speculation", "false") \
-        .config("spark.hadoop.mapreduce.fileoutputcommitter.cleanup-failures.ignored", "true") \
-        .config("spark.hadoop.fs.azure.enable.check.access", "false") \
-        .master("local[*]")
-
-    spark = builder.getOrCreate()
-    
-    # Configuração de Logs para reduzir verbosidade
-    spark.sparkContext.setLogLevel("ERROR")
-    logging.getLogger("py4j").setLevel(logging.ERROR)
-    
-    return spark
+    """Obtém a sessão Spark ativa (Databricks)."""
+    return SparkSession.builder.getOrCreate()
 
 # COMMAND ----------
 
-# configure_azure_access removido (agora usa config.configure_spark_access)
-
-# COMMAND ----------
-
-def list_raw_folders(prefix="balancacomercial/"):
-    """Lista as pastas dentro do prefixo especificado no container RAW."""
-    raw_container_url = config.get_target_url("raw")
-    if not raw_container_url:
-        raise ValueError("URL do container RAW não encontrada.")
-    
-    # ContainerClient precisa da URL completa com SAS
-    container_client = ContainerClient.from_container_url(raw_container_url)
-    blobs = container_client.list_blobs(name_starts_with=prefix)
-    
-    folders = set()
-    for blob in blobs:
-        name = blob.name
-        # Remove o prefixo base para pegar as subpastas
-        relative_path = name[len(prefix):]
-        if '/' in relative_path:
-            # Pega a primeira parte do caminho relativo (nome da subpasta)
-            subfolder = relative_path.split('/')[0]
-            if subfolder:
-                folders.add(subfolder)
-    
-    return sorted(list(folders))
-
-# COMMAND ----------
-
-def delete_virtual_directory(container_url, folder_name):
+def list_raw_folders(spark, protocol):
     """
-    Remove todos os blobs que começam com o folder_name para simular overwrite de diretório.
-    Necessário para evitar 'DirectoryIsNotEmpty' no WASBS com Spark Local.
+    Lista as pastas dentro de 'balancacomercial/' no container RAW.
+    Usa dbutils (Databricks).
     """
     try:
-        container_client = ContainerClient.from_container_url(container_url)
-        # O prefixo deve incluir o caminho base dentro do container
-        # No caso da balança: balancacomercial/{folder_name}
-        prefix = f"balancacomercial/{folder_name}/" # Adicionado / no final para garantir folder
+        from pyspark.dbutils import DBUtils
+        dbutils = DBUtils(spark)
         
-        logger.info(f"  🔍 Buscando arquivos para deletar com prefixo: {prefix} no container {container_client.container_name}")
-        blobs = container_client.list_blobs(name_starts_with=prefix)
-        batch = []
-        count = 0
-        for blob in blobs:
-            batch.append(blob.name)
-            count += 1
-            # Deleta em batches pequenos ou um a um
-            container_client.delete_blob(blob.name)
+        base_path = config.get_base_path("raw", "target", protocol)
+        target_path = f"{base_path}/balancacomercial/"
+        
+        logger.info(f"Listando pastas via dbutils em: {target_path}")
+        paths = dbutils.fs.ls(target_path)
+        
+        folders = []
+        for p in paths:
+            # p.name retorna ex: 'balancacomercial/EXP_2021/' ou apenas 'EXP_2021/' dependendo da versão
+            # O importante é pegar o último componente que é o diretório
+            name = p.name.strip('/') # remove barra final
+            if '/' in name:
+                name = name.split('/')[-1]
+            folders.append(name)
             
-        if count > 0:
-            logger.info(f"  🗑️ Limpeza prévia: {count} arquivos removidos de {prefix}")
-            
+        return sorted(folders)
+        
     except Exception as e:
-        logger.warning(f"  ⚠️ Erro ao tentar limpar diretório {folder_name}: {e}")
+        logger.error(f"Erro ao listar pastas via dbutils: {e}")
+        # Fallback para Azure SDK apenas se falhar muito feio e tivermos chaves
+        # Mas preferimos falhar aqui para garantir ambiente correto
+        raise e
+
 
 # COMMAND ----------
 
@@ -201,15 +143,18 @@ def get_schema_mapping(folder_name, schema):
 def process_balanca_comercial():
     logger.info(f"\n🚀 Iniciando processamento Balança Comercial: Bronze -> Silver")
     
-    # Carregar Schema usando o project_root global calculado no início do script
+    # 1. Inicializar Spark (Prioritário para configurar acesso)
+    spark = get_spark_session()
+    protocol = config.configure_spark_access(spark)
+
+    # Carregar Schema
     schema_path = os.path.join(project_root, 'docs', 'schemas', 'balanca_schema.json')
-    
     logger.info(f"📄 Carregando schema de: {schema_path}")
     full_schema = load_schema(schema_path)
 
-    # 1. Identificar pastas para processar
+    # 2. Identificar pastas para processar
     try:
-        folders = list_raw_folders()
+        folders = list_raw_folders(spark, protocol)
         logger.info(f"📂 Pastas encontradas em 'balancacomercial/': {folders}")
     except Exception as e:
         logger.error(f"❌ Erro ao listar pastas: {e}")
@@ -218,10 +163,6 @@ def process_balanca_comercial():
     if not folders:
         logger.warning("⚠️ Nenhuma pasta encontrada para processar.")
         return
-
-    # 2. Inicializar Spark
-    spark = get_spark_session()
-    protocol = config.configure_spark_access(spark)
     
     # URLs base
     base_url_raw = f"{config.get_base_path('raw', 'target', protocol)}/balancacomercial"
@@ -281,9 +222,6 @@ def process_balanca_comercial():
             
             # --- Escrita ---
             
-            # if trusted_url:
-            #     delete_virtual_directory(trusted_url, folder_name)
-
             logger.info(f"  💾 Salvando em: {target_path}")
             
             # Verifica colunas para particionamento (usando nomes novos do schema se aplicável)
