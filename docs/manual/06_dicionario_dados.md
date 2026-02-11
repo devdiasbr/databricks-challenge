@@ -14,6 +14,7 @@ Este documento descreve detalhadamente as tabelas e colunas disponíveis na cama
 4.  [Dimensão Países (`dim_paises`)](#4-dimensão-países-dim_paises)
 5.  [Dimensão UFs (`dim_ufs`)](#5-dimensão-ufs-dim_ufs)
 6.  [Dimensão Via Transporte (`dim_via_transporte`)](#6-dimensão-via-transporte-dim_via_transporte)
+7.  [Dimensão Distribuição Estabelecimentos (`dim_distribuicao_estabelecimentos`)](#7-dimensão-distribuição-estabelecimentos-dim_distribuicao_estabelecimentos)
 
 ---
 
@@ -213,4 +214,39 @@ FROM gold.ft_balanco_comercial f
 JOIN gold.dim_via_transporte v ON f.sk_via_transporte = v.sk_via_transporte
 GROUP BY v.descricao_via, f.tipo_movimentacao
 ORDER BY valor_total DESC;
+```
+
+---
+
+## 7. Dimensão Distribuição Estabelecimentos (`dim_distribuicao_estabelecimentos`)
+
+Tabela analítica agregada que apresenta a distribuição de empresas ativas por CNAE, Porte e UF.
+
+*   **Objetivo**: Suportar análises de densidade empresarial e vocação econômica regional.
+*   **Granularidade**: Uma linha por CNAE, Porte e UF.
+*   **Particionamento**: `uf`.
+
+| Coluna | Tipo | Chave | Descrição | Exemplo |
+| :--- | :--- | :---: | :--- | :--- |
+| `cnae_fiscal_principal` | `STRING` | - | Código CNAE da atividade principal. | `6204000` |
+| `descricao` | `STRING` | - | Descrição da atividade CNAE. | `Consultoria em tecnologia da informação` |
+| `porte_empresa` | `STRING` | - | Porte descritivo da empresa (Microempresa, Pequeno Porte, etc.). | `Empresa de Pequeno Porte` |
+| `uf` | `STRING` | - | Unidade Federativa do estabelecimento. | `SP` |
+| `Total_empresas` | `BIGINT` | - | Quantidade de estabelecimentos ativos neste grupo. | `150` |
+| `dt_atualizacao` | `TIMESTAMP` | - | Data e hora da última atualização do registro. | `2024-02-09 10:00:00` |
+
+### Exemplo de Uso: Vocação Econômica por Estado
+
+Identifica quais são as atividades econômicas predominantes em um estado específico.
+
+```sql
+SELECT 
+    uf,
+    descricao as atividade_economica,
+    SUM(Total_empresas) as total_estabelecimentos
+FROM gold.dim_distribuicao_estabelecimentos
+WHERE uf = 'SP'
+GROUP BY uf, descricao
+ORDER BY total_estabelecimentos DESC
+LIMIT 10;
 ```

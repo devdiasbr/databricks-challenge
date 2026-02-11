@@ -37,6 +37,12 @@ python src/scripts/05_transformacao_silver_balanca.py
 python src/scripts/06_transformacao_silver_cnpj.py
 ```
 
+### 5. Camada Gold (Refined)
+Gera o Star Schema e datasets analíticos prontos para consumo.
+```bash
+python src/scripts/07_transformacao_gold.py
+```
+
 ## 📊 Monitoramento
 *   Os scripts exibem barras de progresso (`tqdm`) no terminal.
 *   Logs detalhados são salvos localmente na pasta `logs/`.

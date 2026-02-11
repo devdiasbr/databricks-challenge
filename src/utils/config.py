@@ -29,12 +29,21 @@ if not loaded:
 
 # COMMAND ----------
 
+# --- Key Vault & Protocols ---
+DATABRICKS_SCOPE = "databricks-scope-4"
+KV_SECRET_TARGET = "secret-storage-4"
+KV_SECRET_LANDING = "secret-landing"
+
 # --- Helpers de Configuração ---
-def get_config(key, default=None):
+def get_config(key, default=None, secret_key=None):
     """
     Tenta recuperar configuração de múltiplas fontes:
     1. Variável de Ambiente (OS)
     2. Dbutils Secrets (se disponível no Databricks)
+    
+    :param key: Nome da variável de ambiente
+    :param default: Valor padrão
+    :param secret_key: Nome da chave no Key Vault (se diferente da env var)
     """
     # 1. Tenta Env Var
     val = os.getenv(key)
@@ -46,9 +55,10 @@ def get_config(key, default=None):
         from pyspark.sql import SparkSession
         spark = SparkSession.builder.getOrCreate()
         dbutils = DBUtils(spark)
-        # Assume um escopo padrão ou tenta buscar de um escopo configurado
-        # Ajuste 'databricks-challenge-secrets' conforme necessário
-        return dbutils.secrets.get(scope="project-secrets", key=key)
+        
+        # Tenta buscar pelo secret_key específico ou pelo nome da env var
+        key_to_search = secret_key if secret_key else key
+        return dbutils.secrets.get(scope=DATABRICKS_SCOPE, key=key_to_search)
     except Exception:
         pass
         
@@ -65,14 +75,20 @@ CNPJ_URL = get_config("CNPJ_ACCOUNT_URL")
 # Extrai nome da conta (ex: https://landingbeca2026jan.blob...)
 SOURCE_ACCOUNT = "landingbeca2026jan" # Fallback
 if BALANCA_URL:
-    SOURCE_ACCOUNT = BALANCA_URL.split("https://")[1].split(".")[0]
+    try:
+        SOURCE_ACCOUNT = BALANCA_URL.split("https://")[1].split(".")[0]
+    except IndexError:
+        pass
 elif CNPJ_URL:
-    SOURCE_ACCOUNT = CNPJ_URL.split("https://")[1].split(".")[0]
+    try:
+        SOURCE_ACCOUNT = CNPJ_URL.split("https://")[1].split(".")[0]
+    except IndexError:
+        pass
 
 # Tokens específicos de Origem
 SAS_TOKEN_BALANCA = get_config("AZURE_STORAGE_SAS_TOKEN_BALANCA")
 SAS_TOKEN_CNPJ = get_config("AZURE_STORAGE_SAS_TOKEN_CNPJ")
-LANDING_ACCOUNT_KEY = get_config("AZURE_STORAGE_ACCOUNT_KEY_LANDING")
+LANDING_ACCOUNT_KEY = get_config("AZURE_STORAGE_ACCOUNT_KEY_LANDING", secret_key=KV_SECRET_LANDING)
 
 # 2. DESTINO (Lakehouse: Raw, Trusted, Refined)
 TARGET_RAW_URL = get_config("AZURE_TARGET_STORAGE_RAW_URL")
@@ -84,13 +100,73 @@ DELTA_VACUUM_RETENTION_DAYS = 60
 DELTA_OPTIMIZE_FILE_SIZE = 10485760  # 10 MB em bytes
 
 # Extrai nome da conta de destino (Prioridade: Env Var > URL > Default)
-TARGET_ACCOUNT = get_config("TARGET_ACCOUNT") or get_config("AZURE_TARGET_ACCOUNT")
+TARGET_ACCOUNT = get_config("TARGET_ACCOUNT") or get_config("AZURE_TARGET_ACCOUNT") or "grupo4storage"
 
 if not TARGET_ACCOUNT and TARGET_RAW_URL:
     try:
         TARGET_ACCOUNT = TARGET_RAW_URL.split("https://")[1].split(".")[0]
     except Exception:
         pass
+
+
+def configure_spark_access(spark):
+    """
+    Configura acesso ao Storage.
+    Retorna o protocolo a ser usado ('abfss' ou 'wasbs') e o host.
+    """
+    # 1. Tenta Key Vault (Databricks)
+    try:
+        from pyspark.dbutils import DBUtils
+        dbutils = DBUtils(spark)
+        try:
+            target_key = dbutils.secrets.get(scope=DATABRICKS_SCOPE, key=KV_SECRET_TARGET)
+            landing_key = dbutils.secrets.get(scope=DATABRICKS_SCOPE, key=KV_SECRET_LANDING)
+            
+            # Configura ABFSS (DFS) e WASBS (Blob) com Account Key
+            spark.conf.set(f"fs.azure.account.key.{TARGET_ACCOUNT}.dfs.core.windows.net", target_key)
+            spark.conf.set(f"fs.azure.account.key.{SOURCE_ACCOUNT}.dfs.core.windows.net", landing_key)
+            spark.conf.set(f"fs.azure.account.key.{TARGET_ACCOUNT}.blob.core.windows.net", target_key)
+            spark.conf.set(f"fs.azure.account.key.{SOURCE_ACCOUNT}.blob.core.windows.net", landing_key)
+            
+            print(f"[Config] ✅ Acesso configurado via Key Vault ({DATABRICKS_SCOPE}). Protocolo: ABFSS.")
+            return "abfss"
+        except Exception as e:
+            print(f"[Config] ⚠️ Falha ao buscar secrets no Key Vault: {e}")
+    except ImportError:
+        pass
+        
+    # 2. Fallback: SAS Tokens (Local/Env)
+    print("[Config] ℹ️ Usando configuração de fallback (SAS/Env). Protocolo: WASBS.")
+    
+    # Configura SAS para camadas conhecidas
+    layers = {
+        "raw": TARGET_RAW_URL,
+        "trusted": TARGET_TRUSTED_URL,
+        "refined": TARGET_REFINED_URL
+    }
+    
+    for layer, url in layers.items():
+        if url and "?" in url:
+            sas = url.split("?")[1]
+            spark.conf.set(f"fs.azure.sas.{layer}.{TARGET_ACCOUNT}.blob.core.windows.net", sas)
+            
+    # Configura SAS para Landing
+    if SAS_TOKEN_BALANCA:
+        spark.conf.set(f"fs.azure.sas.balancacomercial.{SOURCE_ACCOUNT}.blob.core.windows.net", SAS_TOKEN_BALANCA)
+    if SAS_TOKEN_CNPJ:
+        spark.conf.set(f"fs.azure.sas.cnpj.{SOURCE_ACCOUNT}.blob.core.windows.net", SAS_TOKEN_CNPJ)
+        
+    return "wasbs"
+
+def get_base_path(container, account_type="target", protocol="wasbs"):
+    """Gera o caminho base compatível com o protocolo."""
+    account = TARGET_ACCOUNT if account_type == "target" else SOURCE_ACCOUNT
+    
+    if protocol == "abfss":
+        return f"abfss://{container}@{account}.dfs.core.windows.net"
+    else:
+        return f"wasbs://{container}@{account}.blob.core.windows.net"
+
 
 
 

@@ -145,46 +145,18 @@ spark = get_spark_session()
 # Configuração para evitar erro de "Failed to get primary group" no Windows
 spark.conf.set("fs.azure.enable.check.access", "false")
 
+# Configura acesso via Key Vault ou SAS/Env
+protocol = config.configure_spark_access(spark)
+
 SOURCE_CONTAINER = "balancacomercial"
 SOURCE_ACCOUNT = config.SOURCE_ACCOUNT
 SOURCE_SAS = config.SAS_TOKEN_BALANCA
 
 TARGET_CONTAINER = "raw"
-TARGET_RAW_URL = config.TARGET_RAW_URL
 
-# Extrai SAS e Account do Target URL se necessário
-TARGET_SAS = ""
-TARGET_ACCOUNT = config.TARGET_ACCOUNT
-
-if TARGET_RAW_URL:
-    if "?" in TARGET_RAW_URL:
-        TARGET_SAS = TARGET_RAW_URL.split("?")[1]
-
-# Configura credenciais
-if SOURCE_SAS:
-    spark.conf.set(f"fs.azure.sas.{SOURCE_CONTAINER}.{SOURCE_ACCOUNT}.dfs.core.windows.net", SOURCE_SAS)
-    spark.conf.set(f"fs.azure.sas.{SOURCE_CONTAINER}.{SOURCE_ACCOUNT}.blob.core.windows.net", SOURCE_SAS)
-    
-    # Configuração explícita para ABFSS SAS Provider
-    spark.conf.set(f"fs.azure.account.auth.type.{SOURCE_ACCOUNT}.dfs.core.windows.net", "SAS")
-    spark.conf.set(f"fs.azure.sas.token.provider.type.{SOURCE_ACCOUNT}.dfs.core.windows.net", "org.apache.hadoop.fs.azurebfs.sas.FixedSASTokenProvider")
-    spark.conf.set(f"fs.azure.sas.fixed.token.{SOURCE_ACCOUNT}.dfs.core.windows.net", SOURCE_SAS)
-
-if TARGET_SAS:
-    # Use WASBS for stability with SAS on Local/Windows
-    spark.conf.set(f"fs.azure.sas.{TARGET_CONTAINER}.{TARGET_ACCOUNT}.blob.core.windows.net", TARGET_SAS)
-    TARGET_ABFSS_PATH = f"wasbs://{TARGET_CONTAINER}@{TARGET_ACCOUNT}.blob.core.windows.net"
-    
-    # Configuração legado (ABFSS) mantida apenas se necessário, mas path aponta para WASBS
-    spark.conf.set(f"fs.azure.account.auth.type.{TARGET_ACCOUNT}.dfs.core.windows.net", "SAS")
-    spark.conf.set(f"fs.azure.sas.token.provider.type.{TARGET_ACCOUNT}.dfs.core.windows.net", "org.apache.hadoop.fs.azurebfs.sas.FixedSASTokenProvider")
-    spark.conf.set(f"fs.azure.sas.fixed.token.{TARGET_ACCOUNT}.dfs.core.windows.net", TARGET_SAS)
-    
-else:
-    # Se não tem SAS (Account Key?), usa ABFSS
-    TARGET_ABFSS_PATH = f"abfss://{TARGET_CONTAINER}@{TARGET_ACCOUNT}.dfs.core.windows.net"
-
-SOURCE_ABFSS_PATH = f"abfss://{SOURCE_CONTAINER}@{SOURCE_ACCOUNT}.dfs.core.windows.net"
+# Define caminhos base baseados no protocolo
+SOURCE_ABFSS_PATH = config.get_base_path(SOURCE_CONTAINER, "landing", protocol)
+TARGET_ABFSS_PATH = config.get_base_path(TARGET_CONTAINER, "target", protocol)
 
 # =============================================================================
 # CARREGAMENTO DE SCHEMA

@@ -95,35 +95,7 @@ def get_spark_session():
 
 # COMMAND ----------
 
-def configure_azure_access(spark):
-    """Configura o acesso ao Azure Blob Storage usando SAS Tokens do config.py."""
-    
-    # Lista de layers para configurar
-    layers = ["raw", "trusted"]
-    
-    for layer in layers:
-        url = config.get_target_url(layer)
-        if not url:
-            logger.warning(f"⚠️ Aviso: URL para camada {layer} não encontrada no config.")
-            continue
-            
-        # Extrai o SAS Token da URL (tudo depois do ?)
-        sas_token = ""
-        account = config.TARGET_ACCOUNT
-        
-        if "?" in url:
-            sas_token = url.split("?")[1]
-            
-        if sas_token:
-            # Configuração para WASBS (Blob Storage)
-            spark.conf.set(f"fs.azure.sas.{layer}.{account}.blob.core.windows.net", sas_token)
-            
-            # Configuração ABFSS
-            spark.conf.set(f"fs.azure.account.auth.type.{account}.dfs.core.windows.net", "SAS")
-            spark.conf.set(f"fs.azure.sas.token.provider.type.{account}.dfs.core.windows.net", "org.apache.hadoop.fs.azurebfs.sas.FixedSASTokenProvider")
-            spark.conf.set(f"fs.azure.sas.fixed.token.{account}.dfs.core.windows.net", sas_token)
-            
-            logger.info(f"✅ Configurado acesso SAS para {account}/{layer}")
+# configure_azure_access removido (agora usa config.configure_spark_access)
 
 # COMMAND ----------
 
@@ -249,13 +221,11 @@ def process_balanca_comercial():
 
     # 2. Inicializar Spark
     spark = get_spark_session()
-    configure_azure_access(spark)
+    protocol = config.configure_spark_access(spark)
     
-    # Extrai account para montar URL WASBS
-    account = config.TARGET_ACCOUNT
-        
-    base_url_raw = f"wasbs://raw@{account}.blob.core.windows.net/balancacomercial"
-    base_url_trusted = f"wasbs://trusted@{account}.blob.core.windows.net/balancacomercial"
+    # URLs base
+    base_url_raw = f"{config.get_base_path('raw', 'target', protocol)}/balancacomercial"
+    base_url_trusted = f"{config.get_base_path('trusted', 'target', protocol)}/balancacomercial"
 
     # 3. Processar cada pasta individualmente
     pbar = tqdm.tqdm(folders, desc="Processando Pastas")

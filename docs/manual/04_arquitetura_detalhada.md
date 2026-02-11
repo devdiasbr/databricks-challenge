@@ -10,6 +10,9 @@
 *   **Objetivo**: Armazenar dados brutos com histórico, sem perda de informação.
 *   **Formato**: Delta Lake (preferencial) ou Parquet.
 *   **Estratégia CNPJ**:
+    *   **Ingestão Inteligente**: Uso do `SmartFileLoader` para identificar e processar automaticamente arquivos ZIP e variantes CSV.
+    *   **Suporte a Extensões RFB**: Tratamento nativo de extensões da Receita Federal (`.emprecsv`, `.estabele`, etc.) como arquivos CSV.
+    *   **Validação**: Verificação de integridade e log de arquivos com formato desconhecido.
     *   Os arquivos originais são ZIPs contendo CSVs.
     *   Extraímos o CSV e convertemos para Parquet/Delta.
     *   Mantemos todas as colunas como `string` para evitar erros de leitura.
@@ -37,6 +40,7 @@
     *   Criação de chaves substitutas (`sk_*`) para integridade referencial.
     *   Enriquecimento de dimensões (ex: Sector Econômico baseado no NCM, Regiões baseadas em UF).
     *   Unificação de Fatos (Importação + Exportação na mesma tabela).
+    *   Geração de datasets analíticos auxiliares (ex: Distribuição de Estabelecimentos por CNAE).
 
 #### 📊 Modelo de Dados (Star Schema)
 
@@ -50,6 +54,7 @@ As tabelas foram desenhadas para responder perguntas de negócio como *"Qual o v
 | **dim_paises** | Dimensão | Países e Blocos Econômicos. | País |
 | **dim_ufs** | Dimensão | Unidades Federativas e Regiões do Brasil. | UF |
 | **dim_via_transporte** | Dimensão | Modal logístico (Marítima, Aérea, etc.). | Código Via |
+| **dim_distribuicao_estabelecimentos** | Analítica | Agregação de empresas ativas por CNAE e UF. | CNAE + Porte + UF |
 
 ### 📐 Diagrama de Entidade-Relacionamento (DER)
 

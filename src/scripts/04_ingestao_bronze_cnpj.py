@@ -165,64 +165,32 @@ except ImportError:
 
 from utils import config
 
-# Source Config (Account Key) - From config/env (Secure)
+# Configura acesso via Key Vault ou SAS/Env (Centralizado)
+protocol = config.configure_spark_access(spark)
+
+# Source Config
 SOURCE_ACCOUNT = config.SOURCE_ACCOUNT
 SOURCE_SAS = config.SAS_TOKEN_CNPJ
-SOURCE_KEY = getattr(config, 'LANDING_ACCOUNT_KEY', None)
+SOURCE_KEY = config.LANDING_ACCOUNT_KEY # Agora busca do Key Vault se disponível
 
-# Configura credenciais de ORIGEM (Landing) - Usando Account Key (Prioritário)
-if SOURCE_KEY:
-    # Configura Account Key para acesso total ao container
-    spark.conf.set(f"fs.azure.account.key.{SOURCE_ACCOUNT}.dfs.core.windows.net", SOURCE_KEY)
-    spark.conf.set(f"fs.azure.account.key.{SOURCE_ACCOUNT}.blob.core.windows.net", SOURCE_KEY)
-    print(f"Configured Account Key for {SOURCE_ACCOUNT}")
-elif SOURCE_SAS:
-    # Fallback para SAS se necessário
-    spark.conf.set(f"fs.azure.sas.cnpj.{SOURCE_ACCOUNT}.dfs.core.windows.net", SOURCE_SAS)
-    spark.conf.set(f"fs.azure.sas.cnpj.{SOURCE_ACCOUNT}.blob.core.windows.net", SOURCE_SAS)
-    # ABFSS
-    spark.conf.set(f"fs.azure.account.auth.type.{SOURCE_ACCOUNT}.dfs.core.windows.net", "SAS")
-    spark.conf.set(f"fs.azure.sas.token.provider.type.{SOURCE_ACCOUNT}.dfs.core.windows.net", "org.apache.hadoop.fs.azurebfs.sas.FixedSASTokenProvider")
-    spark.conf.set(f"fs.azure.sas.fixed.token.{SOURCE_ACCOUNT}.dfs.core.windows.net", SOURCE_SAS)
-
-# Target Config (Raw)
-TARGET_RAW_URL = config.TARGET_RAW_URL
-TARGET_SAS = ""
-TARGET_ACCOUNT = config.TARGET_ACCOUNT
-
-if TARGET_RAW_URL:
-    if "?" in TARGET_RAW_URL:
-        TARGET_SAS = TARGET_RAW_URL.split("?")[1]
-
-if TARGET_SAS:
-    # Configure SAS for grupo4storage (Raw Container)
-    account = TARGET_ACCOUNT
-    container = "raw"
-    
-    # Configuração para WASBS (Blob API) - Mais estável para SAS em local mode
-    # Evita o erro ClassNotFoundException: FixedSASTokenProvider
-    spark.conf.set(f"fs.azure.sas.{container}.{account}.blob.core.windows.net", TARGET_SAS)
-    
-    # Configuração legado para ABFSS (caso ainda seja usado, mas sem o Provider fixo que falha)
-    # spark.conf.set(f"fs.azure.sas.{container}.{account}.dfs.core.windows.net", TARGET_SAS)
-
-spark.conf.set("fs.azure.enable.check.access", "false")
-spark.conf.set("fs.azure.skipUserGroupMetadataDuringInitialization", "true")
-
-SOURCE_STORAGE_ACCOUNT = SOURCE_ACCOUNT
 SOURCE_CONTAINER = "cnpj"
-# SOURCE mantido em ABFSS pois está usando Account Key (que funciona bem com ABFSS)
-SOURCE_ABFSS_PATH = f"abfss://{SOURCE_CONTAINER}@{SOURCE_STORAGE_ACCOUNT}.dfs.core.windows.net"
 
-TARGET_STORAGE_ACCOUNT = TARGET_ACCOUNT
+# Target Config
+TARGET_ACCOUNT = config.TARGET_ACCOUNT
 TARGET_CONTAINER = "raw"
-# Alterado para WASBS para contornar erro de Provider do SAS
+
+# Define caminhos base baseados no protocolo
+SOURCE_ABFSS_PATH = config.get_base_path(SOURCE_CONTAINER, "landing", protocol)
+
 # Ajuste: Adicionado /cnpj para garantir organização dentro do raw (raw/cnpj/empresas...)
-TARGET_ABFSS_PATH = f"wasbs://{TARGET_CONTAINER}@{TARGET_STORAGE_ACCOUNT}.blob.core.windows.net/cnpj"
+TARGET_ABFSS_PATH = f"{config.get_base_path(TARGET_CONTAINER, 'target', protocol)}/cnpj"
 
 LOGS_CONTAINER = "$logs"
-# Logs também via WASBS
-LOGS_ABFSS_PATH = f"wasbs://{LOGS_CONTAINER}@{TARGET_STORAGE_ACCOUNT}.blob.core.windows.net"
+LOGS_ABFSS_PATH = config.get_base_path(LOGS_CONTAINER, "target", protocol)
+
+# Configuração para evitar erro de "Failed to get primary group" no Windows
+spark.conf.set("fs.azure.enable.check.access", "false")
+spark.conf.set("fs.azure.skipUserGroupMetadataDuringInitialization", "true")
 
 # Directories
 if os.name == 'nt':

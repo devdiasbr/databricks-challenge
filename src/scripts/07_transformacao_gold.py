@@ -80,77 +80,32 @@ def get_spark_session():
 
 # COMMAND ----------
 
-def configure_azure_access(spark):
-    """Configura o acesso ao Azure Blob Storage (Trusted e Refined)."""
-    layers = ["trusted", "refined"]
-    account = config.TARGET_ACCOUNT
-    
-    for layer in layers:
-        url = config.get_target_url(layer)
-        if not url:
-            logger.warning(f"⚠️ URL para camada {layer} não encontrada.")
-            continue
-            
-        sas_token = ""
-        if "?" in url:
-            sas_token = url.split("?")[1]
-            
-        if sas_token:
-            spark.conf.set(f"fs.azure.sas.{layer}.{account}.blob.core.windows.net", sas_token)
-            logger.info(f"✅ Configurado acesso SAS para {account}/{layer}")
-
-# COMMAND ----------
-
 def adicionar_metadados(df):
     """Adiciona colunas de auditoria."""
     return df \
         .withColumn(CAMPO_ATUALIZACAO, F.current_timestamp())
 
-def salvar_tabela_gold(df, nome_tabela, particionar_por=None):
-    """Salva a tabela na camada Refined (Gold) em formato Delta."""
-    # Constrói URL WASBS para garantir compatibilidade com driver Hadoop-Azure e SAS Tokens
-    account = config.TARGET_ACCOUNT
-    target_path = f"wasbs://refined@{account}.blob.core.windows.net/{nome_tabela}"
+def salvar_tabela_gold(df, nome_tabela, particionar_por=None, protocol="wasbs"):
+    """Salva tabela na camada Gold."""
+    logger.info(f"💾 Salvando {nome_tabela}...")
+    path = f"{config.get_base_path('refined', 'target', protocol)}/{nome_tabela}"
     
-    logger.info(f"💾 Salvando tabela {nome_tabela} em: {target_path}")
-    
-    writer = df.write.format("delta") \
-        .mode("overwrite") \
-        .option("overwriteSchema", "true")
-    
+    writer = df.write.format("delta").mode("overwrite").option("overwriteSchema", "true")
     if particionar_por:
-        writer = writer.partitionBy(particionar_por)
-        
-    writer.save(target_path)
+        writer = writer.partitionBy(*particionar_por)
     
-    # Otimização
-    try:
-        spark = SparkSession.getActiveSession()
-        
-        # Configura tamanho alvo do arquivo para OPTIMIZE (10MB)
-        spark.conf.set("spark.databricks.delta.optimize.maxFileSize", config.DELTA_OPTIMIZE_FILE_SIZE)
-        
-        spark.sql(f"OPTIMIZE delta.`{target_path}`")
-        
-        spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
-        spark.sql(f"VACUUM delta.`{target_path}` RETAIN {config.DELTA_VACUUM_RETENTION_DAYS * 24} HOURS")
-        logger.info(f"⚡ Tabela {nome_tabela} otimizada.")
-    except Exception as e:
-        logger.warning(f"⚠️ Não foi possível otimizar {nome_tabela}: {e}")
-
-    logger.info(f"✅ Tabela {nome_tabela} criada com sucesso! Registros: {df.count():,}")
-
-# COMMAND ----------
+    writer.save(path)
+    logger.info(f"✅ {nome_tabela} salva com sucesso!")
 
 def processar_gold():
     logger.info("🚀 Iniciando processamento Refined (Gold)...")
     
     spark = get_spark_session()
-    configure_azure_access(spark)
+    protocol = config.configure_spark_access(spark)
     
     # URLs base
-    account = config.TARGET_ACCOUNT
-    base_url_trusted = f"wasbs://trusted@{account}.blob.core.windows.net/balancacomercial"
+    base_url_trusted = f"{config.get_base_path('trusted', 'target', protocol)}/balancacomercial"
+
     
     # ==================================================================================
     # 1. Dimensão Data (dim_data)
@@ -186,7 +141,7 @@ def processar_gold():
             .orderBy("sk_data")
             
         df_dim_data = adicionar_metadados(df_dim_data)
-        salvar_tabela_gold(df_dim_data, "dim_data", particionar_por=["ano"])
+        salvar_tabela_gold(df_dim_data, "dim_data", particionar_por=["ano"], protocol=protocol)
         
     except Exception as e:
         logger.error(f"❌ Erro em dim_data: {e}")
@@ -240,7 +195,7 @@ def processar_gold():
             .orderBy("sk_ncm")
 
         df_dim_ncm = adicionar_metadados(df_dim_ncm)
-        salvar_tabela_gold(df_dim_ncm, "dim_ncm")
+        salvar_tabela_gold(df_dim_ncm, "dim_ncm", protocol=protocol)
         
     except Exception as e:
         logger.error(f"❌ Erro em dim_ncm: {e}")
@@ -293,7 +248,7 @@ def processar_gold():
             .orderBy("sk_pais")
             
         df_dim_paises = adicionar_metadados(df_dim_paises)
-        salvar_tabela_gold(df_dim_paises, "dim_paises")
+        salvar_tabela_gold(df_dim_paises, "dim_paises", protocol=protocol)
         
     except Exception as e:
         logger.error(f"❌ Erro em dim_paises: {e}")
@@ -347,7 +302,7 @@ def processar_gold():
             .orderBy("sk_uf")
             
         df_dim_ufs = adicionar_metadados(df_dim_ufs)
-        salvar_tabela_gold(df_dim_ufs, "dim_ufs")
+        salvar_tabela_gold(df_dim_ufs, "dim_ufs", protocol=protocol)
         
     except Exception as e:
         logger.error(f"❌ Erro em dim_ufs: {e}")
@@ -379,7 +334,7 @@ def processar_gold():
             .orderBy("sk_via_transporte")
             
         df_dim_via = adicionar_metadados(df_dim_via)
-        salvar_tabela_gold(df_dim_via, "dim_via_transporte")
+        salvar_tabela_gold(df_dim_via, "dim_via_transporte", protocol=protocol)
         
     except Exception as e:
         logger.error(f"❌ Erro em dim_via_transporte: {e}")
@@ -432,10 +387,63 @@ def processar_gold():
             .withColumn("flag_importacao", F.when(F.col("tipo_movimentacao") == "IMPORTACAO", 1).otherwise(0))
             
         df_ft_balanco = adicionar_metadados(df_ft_balanco)
-        salvar_tabela_gold(df_ft_balanco, "ft_balanco_comercial", particionar_por=["tipo_movimentacao"])
+        salvar_tabela_gold(df_ft_balanco, "ft_balanco_comercial", particionar_por=["tipo_movimentacao"], protocol=protocol)
         
     except Exception as e:
         logger.error(f"❌ Erro em ft_balanco_comercial: {e}")
+
+    # ==================================================================================
+    # 7. Dimensão Distribuição Estabelecimentos (dim_distribuicao_estabelecimentos)
+    # ==================================================================================
+    logger.info("\n🏢 Processando Dimensão Distribuição Estabelecimentos...")
+
+    try:
+        base_url_trusted_cnpj = f"{config.get_base_path('trusted', 'target', protocol)}/cnpj"
+        
+        # Leitura das tabelas da Trusted
+        df_estabelecimentos = spark.read.format("delta").load(f"{base_url_trusted_cnpj}/estabelecimentos")
+        df_empresas = spark.read.format("delta").load(f"{base_url_trusted_cnpj}/empresas")
+        df_cnaes = spark.read.format("delta").load(f"{base_url_trusted_cnpj}/cnaes")
+        
+        # Ajuste de nome de coluna para CNAE (compatibilidade com schema JSON)
+        col_cnae_join = "cnae"
+        if "codigo" in df_cnaes.columns:
+            col_cnae_join = "codigo"
+            
+        logger.info(f"ℹ️ Usando coluna '{col_cnae_join}' para join com CNAEs.")
+
+        # Transformação e Join
+        # Filtra apenas estabelecimentos ativos (situacao_cadastral == 2)
+        df_principais_atividades = df_estabelecimentos.filter(F.col("situacao_cadastral") == 2) \
+            .join(df_cnaes, F.col("cnae_fiscal_principal") == F.col(col_cnae_join), "left") \
+            .join(df_empresas, "cnpj_basico", "left") \
+            .groupBy(
+                F.col("cnae_fiscal_principal"), 
+                F.col("porte_empresa"), 
+                F.col("uf"), 
+                F.col("descricao")
+            ) \
+            .count() \
+            .withColumnRenamed("count", "Total_empresas") \
+            .orderBy(F.desc("Total_empresas")) \
+            .select(
+                F.col("cnae_fiscal_principal"),
+                F.col("descricao"),
+                F.when(F.col("porte_empresa") == 0, 'Não Informado') \
+                 .when(F.col("porte_empresa") == 1, "Microempresa") \
+                 .when(F.col("porte_empresa") == 3, "Empresa de Pequeno Porte") \
+                 .when(F.col("porte_empresa") == 5, "Empresa de Medio/Grande Porte") \
+                 .otherwise("Outros")
+                 .alias("porte_empresa"),
+                F.col("uf"),
+                F.col("Total_empresas")
+            )
+
+        df_principais_atividades = adicionar_metadados(df_principais_atividades)
+        salvar_tabela_gold(df_principais_atividades, "dim_distribuicao_estabelecimentos", particionar_por=["uf"], protocol=protocol)
+
+    except Exception as e:
+        logger.error(f"❌ Erro em dim_distribuicao_estabelecimentos: {e}")
 
     spark.stop()
     logger.info("🏁 Processamento Gold Finalizado.")
