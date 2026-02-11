@@ -17,33 +17,23 @@ from dotenv import load_dotenv
 # Carrega variáveis de ambiente
 load_dotenv()
 
-# Configuração robusta de caminhos (Híbrido Local/Databricks)
+# Configuração de caminhos
 try:
     base_dir = os.path.dirname(os.path.abspath(__file__))
 except NameError:
     base_dir = os.getcwd()
 
-# Navega para cima até encontrar a pasta 'src' para definir o project_root
 project_root = base_dir
-while not os.path.exists(os.path.join(project_root, 'src')) and project_root != os.path.dirname(project_root):
+# Ajuste simples para encontrar a raiz do projeto
+if os.path.basename(project_root) == "scripts":
+    project_root = os.path.dirname(os.path.dirname(project_root))
+elif os.path.basename(project_root) == "src":
     project_root = os.path.dirname(project_root)
 
-# Fallback
-if not os.path.exists(os.path.join(project_root, 'src')):
-    project_root = base_dir
-
-# Adiciona src ao path para importar utils
+# Adiciona src ao path
 src_path = os.path.join(project_root, 'src')
 if src_path not in sys.path:
     sys.path.append(src_path)
-
-# Configuração do Hadoop no Windows
-hadoop_home = os.path.join(project_root, 'hadoop')
-if os.path.exists(hadoop_home):
-    os.environ['HADOOP_HOME'] = hadoop_home
-    hadoop_bin = os.path.join(hadoop_home, 'bin')
-    if hadoop_bin not in os.environ['PATH']:
-        os.environ['PATH'] += os.pathsep + hadoop_bin
 
 import utils.config as config
 from utils.logging_utils import TqdmLoggingHandler
@@ -62,21 +52,8 @@ if not logger.handlers:
 CAMPO_ATUALIZACAO = "dt_atualizacao"
 
 def get_spark_session():
-    """Cria e configura a sessão Spark com suporte a Delta e Azure."""
-    builder = SparkSession.builder \
-        .appName("Gold_Transformation_Balanca") \
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-        .config("spark.jars.packages", "org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6,io.delta:delta-spark_2.12:3.0.0") \
-        .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
-        .config("spark.speculation", "false") \
-        .config("spark.hadoop.fs.azure.enable.check.access", "false") \
-        .master("local[*]")
-
-    spark = builder.getOrCreate()
-    spark.sparkContext.setLogLevel("ERROR")
-    logging.getLogger("py4j").setLevel(logging.ERROR)
-    return spark
+    """Obtém a sessão Spark ativa (Databricks)."""
+    return SparkSession.builder.getOrCreate()
 
 # COMMAND ----------
 

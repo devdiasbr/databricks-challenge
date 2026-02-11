@@ -18,34 +18,23 @@ from azure.storage.blob import ContainerClient
 # Carrega variáveis de ambiente
 load_dotenv()
 
-# Configuração robusta de caminhos (Híbrido Local/Databricks)
+# Configuração de caminhos
 try:
     base_dir = os.path.dirname(os.path.abspath(__file__))
 except NameError:
     base_dir = os.getcwd()
 
-# Navega para cima até encontrar a pasta 'src' para definir o project_root
 project_root = base_dir
-while not os.path.exists(os.path.join(project_root, 'src')) and project_root != os.path.dirname(project_root):
+# Ajuste simples para encontrar a raiz do projeto
+if os.path.basename(project_root) == "scripts":
+    project_root = os.path.dirname(os.path.dirname(project_root))
+elif os.path.basename(project_root) == "src":
     project_root = os.path.dirname(project_root)
 
-# Fallback: se não achou src, usa o base_dir (assume execução na raiz ou flat)
-if not os.path.exists(os.path.join(project_root, 'src')):
-    project_root = base_dir
-
-# Adiciona src ao path para importar utils
+# Adiciona src ao path
 src_path = os.path.join(project_root, 'src')
 if src_path not in sys.path:
     sys.path.append(src_path)
-
-hadoop_home = os.path.join(project_root, 'hadoop')
-if os.path.exists(hadoop_home):
-    os.environ['HADOOP_HOME'] = hadoop_home
-    # Adiciona bin ao PATH se não estiver
-    hadoop_bin = os.path.join(hadoop_home, 'bin')
-    if hadoop_bin not in os.environ['PATH']:
-        os.environ['PATH'] += os.pathsep + hadoop_bin
-    # print(f"✅ HADOOP_HOME configurado: {hadoop_home}")
 
 import utils.config as config
 from utils.transformations import BaseTransform, normalize_column_name
@@ -66,39 +55,9 @@ if not logger.handlers:
 # COMMAND ----------
 
 def get_spark_session():
-    """Cria e configura a sessão Spark com suporte a Delta e Azure."""
-    builder = SparkSession.builder \
-        .appName("BronzeToSilver_CNPJ") \
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-        .config("spark.jars.packages", "org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6,io.delta:delta-spark_2.12:3.0.0") \
-        .config("spark.driver.extraJavaOptions", "-Divy.message.logger.level=4 -Dlog4j.rootCategory=ERROR") \
-        .config("spark.sql.parquet.enableVectorizedReader", "false") \
-        .config("spark.sql.parquet.int96RebaseModeInRead", "CORRECTED") \
-        .config("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED") \
-        .config("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED") \
-        .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
-        .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
-        .config("spark.speculation", "false") \
-        .config("spark.hadoop.mapreduce.fileoutputcommitter.cleanup-failures.ignored", "true") \
-        .config("spark.hadoop.fs.azure.enable.check.access", "false") \
-        .config("spark.driver.memory", "4g") \
-        .config("spark.executor.memory", "4g") \
-        .config("spark.driver.maxResultSize", "2g") \
-        .master("local[*]")
+    """Obtém a sessão Spark ativa (Databricks)."""
+    return SparkSession.builder.getOrCreate()
 
-    spark = builder.getOrCreate()
-    
-    # Configuração de Logs para reduzir verbosidade
-    spark.sparkContext.setLogLevel("ERROR")
-    logging.getLogger("py4j").setLevel(logging.ERROR)
-    
-    return spark
-
-
-# COMMAND ----------
-
-# Função configure_azure_access removida em favor de config.configure_spark_access
 
 # COMMAND ----------
 
