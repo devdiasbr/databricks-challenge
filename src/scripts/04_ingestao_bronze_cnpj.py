@@ -63,54 +63,15 @@ except ImportError:
 # Import SmartFileLoader
 from utils.file_validator import SmartFileLoader
 
-# Windows Hadoop Workaround
-if os.name == 'nt':
-    import tempfile
-    hadoop_home = os.path.join(tempfile.gettempdir(), "hadoop_workaround")
-    hadoop_bin = os.path.join(hadoop_home, "bin")
-    os.makedirs(hadoop_bin, exist_ok=True)
-    
-    if 'HADOOP_HOME' not in os.environ:
-        os.environ['HADOOP_HOME'] = hadoop_home
-    
-    winutils_path = os.path.join(hadoop_bin, "winutils.exe")
-    if not os.path.exists(winutils_path):
-        import urllib.request
-        try:
-            url = "https://raw.githubusercontent.com/cdarlint/winutils/master/hadoop-3.2.2/bin/winutils.exe"
-            urllib.request.urlretrieve(url, winutils_path)
-        except Exception:
-            with open(winutils_path, "w") as f:
-                f.write("Dummy winutils")
-
-    if hadoop_bin not in os.environ['PATH']:
-        os.environ['PATH'] += os.pathsep + hadoop_bin
+# Windows Hadoop Workaround REMOVED
 
 # COMMAND ----------
 
 # Initialize Spark
-is_databricks = ("DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")) and os.name != 'nt'
+def get_spark_session():
+    return SparkSession.builder.getOrCreate()
 
-if is_databricks:
-    # No Databricks, usar a sessão existente
-    spark = SparkSession.builder.getOrCreate()
-else:
-    # Local Environment
-    builder = SparkSession.builder \
-        .appName("IngestaoBronzeCNPJ") \
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-        .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
-        .config("spark.speculation", "false") \
-        .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
-        .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.0.0,org.apache.hadoop:hadoop-azure:3.3.4,com.microsoft.azure:azure-storage:8.6.6") \
-        .config("spark.driver.memory", "8g") \
-        .config("spark.executor.memory", "8g") \
-        .config("spark.sql.shuffle.partitions", "8") \
-        .config("spark.network.timeout", "600s") \
-        .master("local[*]")
-    
-    spark = builder.getOrCreate()
+spark = get_spark_session()
 
 # Suppress logs
 spark.sparkContext.setLogLevel("WARN")
@@ -121,44 +82,14 @@ log4j.LogManager.getLogger("py4j").setLevel(log4j.Level.ERROR)
 
 # COMMAND ----------
 
-# DBUtils Mock
+# DBUtils
 try:
     from pyspark.dbutils import DBUtils
     dbutils = DBUtils(spark)
 except ImportError:
-    class DBUtilsMock:
-        def __init__(self):
-            self.fs = self.FS()
-        class FS:
-            def cp(self, src, dest, recurse=False):
-                try:
-                    sc = spark.sparkContext
-                    jvm = sc._jvm
-                    conf = sc._jsc.hadoopConfiguration()
-                    src_path = jvm.org.apache.hadoop.fs.Path(src)
-                    dst_path = jvm.org.apache.hadoop.fs.Path(dest)
-                    src_fs = src_path.getFileSystem(conf)
-                    dst_fs = dst_path.getFileSystem(conf)
-                    jvm.org.apache.hadoop.fs.FileUtil.copy(
-                        src_fs, src_path, dst_fs, dst_path, False, True, conf
-                    )
-                except Exception:
-                    if src.startswith("file:") and dest.startswith("file:"):
-                        import shutil
-                        shutil.copy(src[5:], dest[5:])
-                    elif src.startswith("file:"): # Local to Remote (not supported fully in mock but simple copy might work if remote is local mapped)
-                         pass
-            def mkdirs(self, path):
-                if path.startswith("file:") or ":" not in path:
-                     os.makedirs(path.replace("file:", ""), exist_ok=True)
-            def ls(self, path):
-                # Minimal mock for ls
-                if path.startswith("file:") or ":" not in path:
-                    local_path = path.replace("file:", "")
-                    if os.path.exists(local_path):
-                         return [type('obj', (object,), {'name': f, 'path': os.path.join(local_path, f)}) for f in os.listdir(local_path)]
-                return []
-    dbutils = DBUtilsMock()
+    # Fail fast if not on Databricks
+    raise ImportError("Este script deve ser executado no Databricks (DBUtils required).")
+
 
 # Configuration
 # COMMAND ----------
