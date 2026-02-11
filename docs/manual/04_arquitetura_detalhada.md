@@ -179,6 +179,26 @@ flowchart TD
 ```
 
 ## 🔐 Segurança
-*   **Credenciais**: Nunca hardcoded. Sempre via variáveis de ambiente (`.env` ou Secrets).
+
+### Integração com Azure Key Vault
+O projeto adota um modelo híbrido de segurança para gerenciamento de credenciais:
+
+1.  **Ambiente Databricks (Produção)**:
+    *   Integração nativa com **Azure Key Vault** via **Databricks Secret Scopes**.
+    *   O pipeline busca automaticamente as chaves no escopo `databricks-scope-4`.
+    *   **Mapeamento de Segredos**:
+        *   `secret-landing`: Chave da conta de origem (Landing Zone).
+        *   `secret-target`: Chave da conta de destino (Raw/Trusted/Refined).
+    *   Nenhuma credencial trafega em texto plano no código.
+
+2.  **Ambiente Local (Desenvolvimento)**:
+    *   Fallback para variáveis de ambiente carregadas de arquivo `.env`.
+    *   Suporte a **Account Keys** e **SAS Tokens**.
+    *   O arquivo `.env` é ignorado pelo Git (`.gitignore`) para evitar vazamentos.
+
+3.  **Protocolos de Acesso**:
+    *   **ABFSS (Azure Blob File System Secure)**: Usado preferencialmente no Databricks e quando a Account Key está disponível (melhor performance).
+    *   **WASBS (Windows Azure Storage Blob Secure)**: Usado como fallback em ambiente local Windows para compatibilidade com SAS Tokens e drivers Hadoop legado.
+
 *   **Rede**: Acesso via HTTPS (TLS 1.2+).
 *   **Logs**: Não logamos dados sensíveis, apenas metadados de execução.

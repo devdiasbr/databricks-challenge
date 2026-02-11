@@ -46,6 +46,24 @@ AZURE_TARGET_STORAGE_TRUSTED_URL="https://grupo4storage.blob.core.windows.net/tr
 > O projeto baixa automaticamente o `winutils.exe` necessário para o Spark rodar no Windows. Ele cria uma pasta `hadoop/bin` na raiz do projeto. Não é necessário instalar o Hadoop completo.
 
 ## ☁️ Execução no Databricks
-1.  Importe o repositório no Databricks Repos.
-2.  As variáveis de ambiente podem ser configuradas via **Databricks Secrets** ou criando um arquivo `.env` no driver (menos seguro).
-3.  Os scripts são compatíveis e detectam automaticamente que não estão rodando localmente (ajustando caminhos via `os.getcwd()` em vez de `__file__`).
+
+### 1. Integração com Key Vault (Segurança)
+Para garantir a segurança das credenciais em produção, o projeto utiliza **Azure Key Vault** integrado via **Databricks Secret Scopes**.
+
+1.  **Criar o Secret Scope**:
+    *   No Databricks, crie um escopo apoiado pelo Azure Key Vault.
+    *   Nome do Escopo (padrão do projeto): `databricks-scope-4`.
+
+2.  **Mapeamento de Segredos**:
+    *   Certifique-se de que os seguintes segredos existam no Key Vault:
+        *   `secret-landing`: Access Key da Storage Account de Origem (Landing Zone).
+        *   `secret-target`: Access Key da Storage Account de Destino (Raw/Trusted/Gold).
+
+3.  **Execução**:
+    *   Importe o repositório no Databricks Repos.
+    *   Os scripts (`src/scripts/`) detectarão automaticamente o ambiente Databricks e usarão `dbutils.secrets.get()` para recuperar as chaves.
+    *   Não é necessário criar arquivo `.env` no Databricks se o Key Vault estiver configurado corretamente.
+
+### 2. Detalhes de Compatibilidade
+*   Os scripts ajustam automaticamente os caminhos (`os.getcwd()`) para funcionar no sistema de arquivos do driver do Databricks.
+*   O uso de **ABFSS** é priorizado no Databricks para melhor performance.
