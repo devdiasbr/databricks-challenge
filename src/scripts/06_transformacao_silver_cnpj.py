@@ -103,26 +103,77 @@ def get_spark_session():
 # COMMAND ----------
 
 
-def list_raw_folders_cnpj():
-    """Lista as pastas CNPJ dentro da pasta 'cnpj' no container RAW."""
-    # Tenta usar container client se possível, ou filesystem do Spark se já montado?
-    # Aqui usamos Azure SDK diretamente, precisa de credenciais.
-    # Se estiver no Databricks com Key Vault, config.LANDING_ACCOUNT_KEY pode não ser suficiente se for TARGET.
-    # Mas raw está no target.
+def list_raw_folders_cnpj(spark=None, protocol=None):
+    """
+    Lista as pastas CNPJ dentro da pasta 'cnpj' no container RAW.
+    Suporta Databricks (dbutils) e Local (Azure SDK).
+    """
+    known_cnpj_entities = [
+        "empresas", "estabelecimentos", "socios", "cnaes", 
+        "paises", "naturezas", "municipios", "simples", 
+        "motivos", "qualificacoes"
+    ]
+
+    # 1. Tentar via dbutils (Databricks)
+    try:
+        from pyspark.dbutils import DBUtils
+        if spark:
+            try:
+                dbutils = DBUtils(spark)
+                # Constrói o path
+                base_path = config.get_base_path("raw", "target", protocol)
+                cnpj_path = f"{base_path}/cnpj/"
+                
+                logger.info(f"Listando pastas via dbutils em: {cnpj_path}")
+                paths = dbutils.fs.ls(cnpj_path)
+                
+                found_folders = []
+                for p in paths:
+                    name = p.name.strip('/')
+                    if name in known_cnpj_entities:
+                        found_folders.append(name)
+                return sorted(found_folders)
+            except Exception as e:
+                logger.warning(f"Falha ao listar via dbutils ({e}). Tentando fallback Azure SDK.")
+    except ImportError:
+        pass
+
+    # 2. Fallback: Azure SDK (ContainerClient) - Local ou Databricks sem mount
+    logger.info("Listando pastas via Azure SDK (ContainerClient)...")
     
-    # TODO: Melhorar isso para usar credenciais do Key Vault via config se disponível.
-    # Por enquanto, mantemos a lógica de URL/SAS ou tentamos account key do target se exposta.
+    target_key = config.get_config("AZURE_STORAGE_ACCOUNT_KEY_TARGET", secret_key=config.KV_SECRET_TARGET)
+    target_account = config.TARGET_ACCOUNT
     
-    raw_container_url = config.get_target_url("raw")
-    # ... (rest of logic relies on URL which implies SAS)
+    folders = set()
     
-    # SE não tiver URL (porque estamos usando Key Vault e não SAS), precisamos de outra forma.
-    # Se config.configure_spark_access foi chamado, o Spark tem acesso.
-    # Mas aqui estamos usando python azure.storage.blob.
-    
-    # Vamos tentar usar dbutils.fs.ls se estiver no Databricks?
-    # Ou usar config.get_config para pegar a key do target.
-    pass
+    try:
+        if target_key:
+             account_url = f"https://{target_account}.blob.core.windows.net"
+             container_client = ContainerClient(account_url=account_url, container_name="raw", credential=target_key)
+        else:
+             # Fallback para SAS
+             raw_container_url = config.get_target_url("raw")
+             if not raw_container_url:
+                 logger.warning("Sem credenciais (Key/SAS) para listar pastas.")
+                 return []
+             container_client = ContainerClient.from_container_url(raw_container_url)
+        
+        # Lista blobs com prefixo
+        blobs = container_client.list_blobs(name_starts_with="cnpj/")
+        
+        for blob in blobs:
+            name = blob.name 
+            parts = name.split('/')
+            if len(parts) > 1:
+                subfolder = parts[1]
+                if subfolder in known_cnpj_entities:
+                    folders.add(subfolder)
+                    
+    except Exception as e:
+        logger.error(f"Erro ao listar via SDK: {e}")
+        return []
+
+    return sorted(list(folders))
 
 # ... (Wait, I cannot put comments in new_str that replace logic without implementing it)
 # I will rewrite the function to be robust.
@@ -254,27 +305,29 @@ def get_schema_mapping(folder_name, schema):
 def process_cnpj():
     logger.info(f"\n🚀 Iniciando processamento CNPJ: Bronze -> Silver")
     
+    # 1. Inicializar Spark (Prioritário para configurar acesso e Key Vault)
+    spark = get_spark_session()
+    protocol = config.configure_spark_access(spark)
+    
     # Carregar Schema usando o project_root global calculado no início do script
     schema_path = os.path.join(project_root, 'docs', 'schemas', 'cnpj_schema.json')
     
     logger.info(f"📄 Carregando schema de: {schema_path}")
     full_schema = load_schema(schema_path)
 
-    # 1. Identificar pastas para processar
+    # 2. Identificar pastas para processar
     try:
-        folders = list_raw_folders_cnpj()
+        folders = list_raw_folders_cnpj(spark, protocol)
         logger.info(f"📂 Pastas CNPJ encontradas em 'raw': {folders}")
     except Exception as e:
         logger.error(f"❌ Erro ao listar pastas: {e}")
+        spark.stop()
         return
 
     if not folders:
         logger.warning("⚠️ Nenhuma pasta CNPJ encontrada para processar.")
+        spark.stop()
         return
-
-    # 2. Inicializar Spark
-    spark = get_spark_session()
-    protocol = config.configure_spark_access(spark)
     
     # Extrai account para montar URL baseada no protocolo
     account = config.TARGET_ACCOUNT
