@@ -13,12 +13,6 @@ from pyspark.sql.functions import col, trim, lower, when, count, lit, upper
 from dotenv import load_dotenv
 import unicodedata
 from azure.storage.blob import ContainerClient
-<<<<<<< Updated upstream
-
-# Carrega variáveis de ambiente
-load_dotenv()
-=======
->>>>>>> Stashed changes
 
 try:
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -37,13 +31,6 @@ if src_path not in sys.path:
 
 import utils.config as config
 from utils.transformations import BaseTransform, normalize_column_name
-<<<<<<< Updated upstream
-from utils.logging_utils import TqdmLoggingHandler
-
-# Configura Logger Global
-=======
-
->>>>>>> Stashed changes
 logger = logging.getLogger("BronzeToSilver_Balanca")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
@@ -148,16 +135,9 @@ def process_balanca_comercial():
     base_url_raw = f"{config.get_base_path('raw', 'target', protocol)}/balancacomercial"
     base_url_trusted = f"{config.get_base_path('trusted', 'target', protocol)}/balancacomercial"
 
-<<<<<<< Updated upstream
-    # 3. Processar cada pasta individualmente
-    pbar = tqdm.tqdm(folders, desc="Processando Pastas")
-    for folder_name in pbar:
-        pbar.set_description(f"Processando: {folder_name}")
-=======
     logger.info("Processando Pastas...")
     for folder_name in folders:
         logger.info(f"Processando: {folder_name}")
->>>>>>> Stashed changes
         
         source_path = f"{base_url_raw}/{folder_name}"
         target_path = f"{base_url_trusted}/{folder_name}"

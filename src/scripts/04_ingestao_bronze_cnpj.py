@@ -40,41 +40,8 @@ src_dir = os.path.join(project_root, "src")
 if src_dir not in sys.path:
     sys.path.append(src_dir)
 
-<<<<<<< Updated upstream
-# Import TqdmLoggingHandler
-try:
-    from utils.logging_utils import TqdmLoggingHandler
-except ImportError:
-    from tqdm import tqdm
-    class TqdmLoggingHandler(logging.Handler):
-        def emit(self, record):
-            try:
-                msg = self.format(record)
-                tqdm.write(msg)
-                self.flush()
-            except Exception:
-                self.handleError(record)
-
-try:
-    from tqdm import tqdm
-except ImportError:
-    def tqdm(iterable=None, *args, **kwargs):
-        return iterable
-    tqdm.write = print
-
-# Import SmartFileLoader
-=======
->>>>>>> Stashed changes
 from utils.file_validator import SmartFileLoader
 
-<<<<<<< Updated upstream
-# Windows Hadoop Workaround REMOVED
-
-# COMMAND ----------
-
-# Initialize Spark
-=======
->>>>>>> Stashed changes
 def get_spark_session():
     """Obtém ou cria a sessão Spark ativa."""
     return SparkSession.builder.getOrCreate()
@@ -92,18 +59,8 @@ try:
     dbutils = DBUtils(spark)
 except ImportError:
     raise ImportError("Este script deve ser executado no Databricks (DBUtils required).")
-<<<<<<< Updated upstream
-
-
-# Configuration
-# COMMAND ----------
-
 from utils import config
 
-# Configura acesso via Key Vault ou SAS/Env (Centralizado)
-=======
-
->>>>>>> Stashed changes
 protocol = config.configure_spark_access(spark)
 
 SOURCE_ACCOUNT = config.SOURCE_ACCOUNT
@@ -117,10 +74,7 @@ TARGET_CONTAINER = "raw"
 SOURCE_ABFSS_PATH = config.get_base_path(SOURCE_CONTAINER, "landing", protocol)
 TARGET_ABFSS_PATH = f"{config.get_base_path(TARGET_CONTAINER, 'target', protocol)}/cnpj"
 
-<<<<<<< Updated upstream
-=======
 FORCE_FULL_LOAD = True
->>>>>>> Stashed changes
 LOGS_CONTAINER = "$logs"
 LOGS_ABFSS_PATH = config.get_base_path(LOGS_CONTAINER, "target", protocol)
 
@@ -179,15 +133,9 @@ ENTITY_FOLDER_MAP = {
     "QUALIFICACOES": "qualificacoes"
 }
 
-<<<<<<< Updated upstream
-# =============================================================================
-# CARREGAMENTO DE SCHEMA (Substitui COLUMN_NAMES hardcoded)
-# =============================================================================
-=======
 FORCE_FULL_LOAD = True
 processed_folders = set()
 
->>>>>>> Stashed changes
 schema_path = os.path.join(project_root, 'docs', 'schemas', 'cnpj_schema.json')
 try:
     with open(schema_path, 'r', encoding='utf-8') as f:
@@ -304,41 +252,12 @@ def ingest_cnpj_autoloader(entity_key, file_pattern, logger):
                         else:
                             df_extracted = df_extracted.toDF(*cols[:len(current_cols)])
                     
-<<<<<<< Updated upstream
-                    df_to_write = df_raw.select(*final_selects)
-                
-                # 4. Save to Delta
-                # Usa mapeamento para nome amigável ou fallback para minúsculo
-                folder_name = ENTITY_FOLDER_MAP.get(entity_name, entity_name.lower())
-                target_path = f"{TARGET_ABFSS_PATH}/{folder_name}"
-                mode = "overwrite" if first_batch else "append"
-                
-                writer = df_to_write.write.format("delta").mode(mode).option("overwriteSchema", "true" if first_batch else "false")
-                
-                if entity_name == "ESTABELE":
-                     writer = writer.partitionBy("uf")
-                elif entity_name == "SIMPLES":
-                     writer = writer.partitionBy("opcao_simples")
-                
-                writer.save(target_path)
-                logger.info(f"[{entity_name}] Batch saved ({mode})")
-                first_batch = False
-                
-                # Cleanup extracted file to save space
-                try:
-                    if os.path.exists(file_info['path']):
-                        # os.remove(file_info['path']) # COMENTADO PARA DEBUG DO USUÁRIO
-                        logger.info(f"   [DEBUG] Mantendo arquivo temporário em: {file_info['path']}")
-                except:
-                    pass
-=======
                     (df_extracted.write
                         .format("delta")
                         .mode("append")
                         .option("mergeSchema", "true")
                         .save(target_path)
                     )
->>>>>>> Stashed changes
                     
                     os.remove(local_extracted)
             
@@ -370,12 +289,6 @@ def run_pipeline():
     logger.info(f"📂 Diretório de Logs: {TMP_LOG_DIR}")
     
     total_entities = len(CSV_PATTERNS)
-<<<<<<< Updated upstream
-    with tqdm(total=total_entities, desc="Processing Entities") as pbar:
-        for entity_name, file_pattern in CSV_PATTERNS.items():
-            process_entity(entity_name, file_pattern, logger)
-            pbar.update(1)
-=======
     logger.info(f"Processing {total_entities} entities using Autoloader...")
     for entity_key, pattern in CSV_PATTERNS.items():
         zip_pattern = pattern.replace(".csv", ".zip")
@@ -383,7 +296,6 @@ def run_pipeline():
             ingest_cnpj_autoloader(entity_key, zip_pattern, logger)
         except Exception as e:
             logger.error(f"❌ Erro ao processar {entity_key}: {e}")
->>>>>>> Stashed changes
             
     logger.info("PIPELINE COMPLETED")
     blob_handler.flush_to_blob(f"{LOGS_ABFSS_PATH}/cnpj_pipeline_{pipeline_run_id}.log")

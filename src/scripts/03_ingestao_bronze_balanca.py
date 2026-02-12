@@ -18,17 +18,10 @@ import tempfile
 import pyspark.sql.functions as F
 from pyspark.sql import SparkSession
 
-<<<<<<< Updated upstream
-# =============================================================================
-# LOGGING SETUP
-# =============================================================================
-=======
 """
 Script de Ingestão Bronze para dados da Balança Comercial.
 Responsável por mover dados da camada Landing para a camada Bronze usando Databricks Autoloader.
 """
-
->>>>>>> Stashed changes
 try:
     base_dir = os.path.dirname(os.path.abspath(__file__))
 except NameError:
@@ -45,21 +38,8 @@ src_path = os.path.join(project_root, "src")
 if src_path not in sys.path:
     sys.path.append(src_path)
 
-<<<<<<< Updated upstream
-try:
-    from utils.logging_utils import TqdmLoggingHandler
-except ImportError:
-    class TqdmLoggingHandler(logging.Handler):
-        def emit(self, record):
-            try:
-                msg = self.format(record)
-                print(msg) # Simple fallback
-            except Exception:
-                self.handleError(record)
-=======
 import utils.config as config
 from utils.file_validator import SmartFileLoader
->>>>>>> Stashed changes
 
 logger = logging.getLogger("IngestaoBronzeBalanca")
 logger.setLevel(logging.INFO)
@@ -68,18 +48,6 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S'))
     logger.addHandler(handler)
 
-<<<<<<< Updated upstream
-import utils.config as config
-from utils.file_validator import SmartFileLoader
-from azure.storage.blob import ContainerClient
-
-# =============================================================================
-# INITIALIZE SPARK SESSION
-# =============================================================================
-# COMMAND ----------
-
-=======
->>>>>>> Stashed changes
 def get_spark_session():
     """Obtém ou cria a sessão Spark ativa."""
     return SparkSession.builder.getOrCreate()
@@ -97,15 +65,8 @@ TARGET_CONTAINER = "raw"
 SOURCE_ABFSS_PATH = config.get_base_path(SOURCE_CONTAINER, "landing", protocol)
 TARGET_ABFSS_PATH = config.get_base_path(TARGET_CONTAINER, "target", protocol)
 
-<<<<<<< Updated upstream
-# =============================================================================
-# CARREGAMENTO DE SCHEMA
-# =============================================================================
-# COMMAND ----------
-=======
 FORCE_FULL_LOAD = True
 processed_folders = set()
->>>>>>> Stashed changes
 
 schema_path = os.path.join(project_root, 'docs', 'schemas', 'balanca_schema.json')
 try:
@@ -183,38 +144,6 @@ def ingest_with_autoloader(entity_name, file_pattern, schema_mapping=None):
         for col_name in df_stream.columns:
             df_stream = df_stream.withColumnRenamed(col_name, col_name.lower().replace(" ", "_"))
 
-<<<<<<< Updated upstream
-    blobs = container_client.list_blobs()
-    arquivos = []
-    for blob in blobs:
-        arquivos.append((blob.name, blob.name))
-
-except Exception as e:
-    logger.error(f"Erro ao listar blobs: {e}")
-    raise e
-
-arquivos_filtrados = []
-logger.info(f"Iniciando validação de {len(arquivos)} arquivos encontrados...")
-
-for path, name in arquivos:
-    if name in arquivos_para_ignorar:
-        continue
-    _, ext = os.path.splitext(name)
-    if ext.lower() not in SmartFileLoader.SUPPORTED_EXTENSIONS:
-        continue
-    arquivos_filtrados.append((path, name))
-
-logger.info(f"Arquivos válidos para ingestão: {len(arquivos_filtrados)}")
-
-# Diretório temporário local (Driver do Databricks)
-TEMP_DIR = os.path.join(tempfile.gettempdir(), "balanca_ingestion")
-os.makedirs(TEMP_DIR, exist_ok=True)
-
-pbar = tqdm.tqdm(arquivos_filtrados, desc="Ingestão Bronze")
-
-for blob_name, name in pbar:
-    pbar.set_description(f"Ingerindo: {name}")
-=======
     query = (df_stream.writeStream
         .format("delta")
         .outputMode("append")
@@ -223,7 +152,6 @@ for blob_name, name in pbar:
         .trigger(availableNow=True)
         .start(target_path)
     )
->>>>>>> Stashed changes
     
     query.awaitTermination()
     logger.info(f"✅ Ingestão de {entity_name} concluída com sucesso.")
@@ -255,25 +183,4 @@ def run_ingestion():
 if __name__ == "__main__":
     run_ingestion()
 
-logger.info("\n--- Processo de Ingestão Autoloader Finalizado ---")
-
-<<<<<<< Updated upstream
-        path_destino = f"{TARGET_ABFSS_PATH}/{nome_pasta_raw}"
-        
-        (df_temp.write 
-            .format("delta") 
-            .mode("append") 
-            .option("mergeSchema", "true") 
-            .save(path_destino) 
-        )
-        logger.info(f"   Salvo em: {path_destino}")
-        
-    except Exception as e:
-        logger.error(f"   Erro ao processar {name}: {e}")
-    finally:
-        shutil.rmtree(file_temp_dir, ignore_errors=True)
-        # Opcional: Limpar DBFS bridge também se desejar economizar espaço, mas /tmp é limpo eventualmente.
-
-logger.info("--- Processo de Ingestão Finalizado ---")
-=======
->>>>>>> Stashed changes
+logger.info("--- Processo de Ingestão Autoloader Finalizado ---")
