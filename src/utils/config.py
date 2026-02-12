@@ -73,7 +73,7 @@ BALANCA_URL = get_config("BALANCA_ACCOUNT_URL")
 CNPJ_URL = get_config("CNPJ_ACCOUNT_URL")
 
 # Extrai nome da conta (ex: https://landingbeca2026jan.blob...)
-SOURCE_ACCOUNT = "landingbeca2026jan" # Fallback
+SOURCE_ACCOUNT = get_config("SOURCE_STORAGE_ACCOUNT") or "rgbrunodias"
 if BALANCA_URL:
     try:
         SOURCE_ACCOUNT = BALANCA_URL.split("https://")[1].split(".")[0]
