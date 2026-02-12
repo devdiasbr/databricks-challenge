@@ -1,4 +1,4 @@
-[🏠 Home](../../README.md) | [Escopo](./00_escopo_e_cronograma.md) | [Visão Geral](./01_visao_geral.md) | [Configuração](./02_configuracao_ambiente.md) | [Execução](./03_execucao_pipeline.md) | **Arquitetura** | [Troubleshooting](./05_guia_troubleshooting.md) | [Dicionário](./06_dicionario_dados.md)
+[🏠 Home](../../README.md) | [Escopo](./00_escopo_e_cronograma.md) | [Visão Geral](./01_visao_geral.md) | [Configuração](./02_configuracao_ambiente.md) | [Execução](./03_execucao_pipeline.md) | **Arquitetura** | [Troubleshooting](./05_guia_troubleshooting.md) | [Dicionário](./06_dicionario_dados.md) | [Sumário](./index.md)
 
 ---
 
@@ -8,17 +8,15 @@
 
 ### 🥉 Bronze Layer (Raw)
 *   **Objetivo**: Armazenar dados brutos com histórico, sem perda de informação.
-*   **Formato**: Delta Lake (preferencial) ou Parquet.
+*   **Tecnologia**: **Databricks Autoloader (`cloudFiles`)** para ingestão incremental e automática.
+*   **Formato**: Delta Lake (preferencial).
 *   **Estratégia CNPJ**:
-    *   **Ingestão Inteligente**: Uso do `SmartFileLoader` para identificar e processar automaticamente arquivos ZIP e variantes CSV.
-    *   **Suporte a Extensões RFB**: Tratamento nativo de extensões da Receita Federal (`.emprecsv`, `.estabele`, etc.) como arquivos CSV.
-    *   **Validação**: Verificação de integridade e log de arquivos com formato desconhecido.
-    *   Os arquivos originais são ZIPs contendo CSVs.
-    *   Extraímos o CSV e convertemos para Parquet/Delta.
-    *   Mantemos todas as colunas como `string` para evitar erros de leitura.
+    *   **Ingestão via Streaming**: Uso do Autoloader com `binaryFile` para processar arquivos ZIP de forma eficiente.
+    *   **Tratamento Nativo**: Suporte a extensões da Receita Federal (`.emprecsv`, `.estabele`, etc.) via `pathGlobFilter`.
+    *   Extraímos o conteúdo dos ZIPs e convertemos para Delta preservando o schema original.
 *   **Estratégia Balança**:
-    *   Leitura direta dos CSVs da origem.
-    *   Conversão para Delta.
+    *   Ingestão incremental via Autoloader monitorando a pasta `balancacomercial/`.
+    *   Conversão direta de CSV para Delta com inferência de tipos.
 
 ### 🥈 Silver Layer (Trusted)
 *   **Objetivo**: Dados limpos, validados e prontos para análise (Data Quality).
@@ -48,11 +46,10 @@ As tabelas foram desenhadas para responder perguntas de negócio como *"Qual o v
 
 | Tabela | Tipo | Descrição | Granularidade |
 | :--- | :--- | :--- | :--- |
-| **ft_balanco_comercial** | Fato | Transações de Importação e Exportação unificadas. | NCM + País + UF + Via + Mês |
+| **ft_balanco_comercial** | Fato | Transações de Importação e Exportação unificadas. | NCM + Geografia + Via + Mês |
 | **dim_data** | Dimensão | Calendário fiscal e sazonal (Ano, Mês, Trimestre). | Mês |
 | **dim_ncm** | Dimensão | Detalhes do Produto, CNAE e Setor Econômico. | Código NCM |
-| **dim_paises** | Dimensão | Países e Blocos Econômicos. | País |
-| **dim_ufs** | Dimensão | Unidades Federativas e Regiões do Brasil. | UF |
+| **dim_geografia** | Dimensão | Unificação de Países e UFs Brasileiras. | País ou UF |
 | **dim_via_transporte** | Dimensão | Modal logístico (Marítima, Aérea, etc.). | Código Via |
 | **dim_distribuicao_estabelecimentos** | Analítica | Agregação de empresas ativas por CNAE e UF. | CNAE + Porte + UF |
 
@@ -64,8 +61,8 @@ Abaixo apresentamos a modelagem física da camada Gold, ilustrando as chaves pri
 erDiagram
     ft_balanco_comercial {
         bigint sk_ncm FK
-        bigint sk_pais FK
-        bigint sk_uf FK
+        bigint sk_geografia FK
+        bigint sk_geografia_uf FK
         bigint sk_via_transporte FK
         bigint sk_data FK
         string tipo_movimentacao
@@ -92,40 +89,30 @@ erDiagram
     dim_ncm {
         bigint sk_ncm PK
         string codigo_ncm
-        string descricao_ncm
-        string cnae
-        string descricao_cnae
-        string setor_economico
+        string nome_ncm
+        string fator_agregado
+        string nomenclatura_ppe
     }
 
-    dim_paises {
-        bigint sk_pais PK
-        string codigo_pais
-        string sigla_pais
-        string nome_pais
-        string bloco_economico
-    }
-
-    dim_ufs {
-        bigint sk_uf PK
-        string sigla_uf
-        string nome_uf
-        string regiao
-        bigint sk_pais FK
+    dim_geografia {
+        bigint sk_geografia PK
+        string codigo_referencia
+        string nome_geografia
+        string nivel
+        string sigla
+        string regiao_ou_bloco
     }
 
     dim_via_transporte {
         bigint sk_via_transporte PK
         int codigo_via
-        string descricao_via
+        string nome_via
     }
 
     dim_data ||--o{ ft_balanco_comercial : "filtra por período"
     dim_ncm ||--o{ ft_balanco_comercial : "descreve produto"
-    dim_paises ||--o{ ft_balanco_comercial : "localiza país parceiro"
-    dim_ufs ||--o{ ft_balanco_comercial : "localiza UF origem/destino"
+    dim_geografia ||--o{ ft_balanco_comercial : "localiza parceiro/origem"
     dim_via_transporte ||--o{ ft_balanco_comercial : "transporta via"
-    dim_paises ||--o{ dim_ufs : "contém"
 ```
 
 ## 🔄 Fluxo de Dados

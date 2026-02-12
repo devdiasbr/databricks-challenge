@@ -1,4 +1,4 @@
-[🏠 Home](../../README.md) | [Escopo](./00_escopo_e_cronograma.md) | [Visão Geral](./01_visao_geral.md) | [Configuração](./02_configuracao_ambiente.md) | **Execução** | [Arquitetura](./04_arquitetura_detalhada.md) | [Troubleshooting](./05_guia_troubleshooting.md) | [Dicionário](./06_dicionario_dados.md)
+[🏠 Home](../../README.md) | [Escopo](./00_escopo_e_cronograma.md) | [Visão Geral](./01_visao_geral.md) | [Configuração](./02_configuracao_ambiente.md) | **Execução** | [Arquitetura](./04_arquitetura_detalhada.md) | [Troubleshooting](./05_guia_troubleshooting.md) | [Dicionário](./06_dicionario_dados.md) | [Sumário](./index.md)
 
 ---
 
@@ -22,13 +22,13 @@ Garanta que os containers de destino existem:
 python src/scripts/02_setup_validacao_targets.py
 ```
 
-### 3. Camada Bronze (Ingestão)
-Lê da Landing Zone e salva na Raw (Delta/Parquet).
+### 3. Camada Bronze (Ingestão Incremental)
+Lê da Landing Zone e salva na Raw (Delta). Utiliza **Databricks Autoloader** para processamento eficiente de novos arquivos.
 ```bash
 python src/scripts/03_ingestao_bronze_balanca.py
 python src/scripts/04_ingestao_bronze_cnpj.py
 ```
-> **Nota CNPJ:** O script do CNPJ faz download e extração de ZIPs em streaming. Pode demorar dependendo da sua internet.
+> **Nota CNPJ:** O script do CNPJ utiliza o Autoloader com `binaryFile` para processar arquivos ZIP de forma incremental e automática.
 
 ### 4. Camada Silver (Transformação)
 Lê da Raw, limpa e salva na Trusted (Delta).

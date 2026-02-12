@@ -19,19 +19,20 @@ import pyspark.sql.functions as F
 from pyspark.sql import SparkSession, DataFrame
 from azure.storage.blob import ContainerClient
 
-# Add project root to sys.path
-# Configuração robusta de caminhos (Híbrido Local/Databricks)
+"""
+Script de Ingestão Bronze para dados públicos do CNPJ.
+Responsável por extrair arquivos ZIP da camada Landing e carregar para a camada Bronze usando Autoloader.
+"""
+
 try:
     base_dir = os.path.dirname(os.path.abspath(__file__))
 except NameError:
     base_dir = os.getcwd()
 
-# Navega para cima até encontrar a pasta 'src' para definir o project_root
 project_root = base_dir
 while not os.path.exists(os.path.join(project_root, 'src')) and project_root != os.path.dirname(project_root):
     project_root = os.path.dirname(project_root)
 
-# Fallback: se não achou src, usa o base_dir (assume execução na raiz ou flat)
 if not os.path.exists(os.path.join(project_root, 'src')):
     project_root = base_dir
 
@@ -39,6 +40,7 @@ src_dir = os.path.join(project_root, "src")
 if src_dir not in sys.path:
     sys.path.append(src_dir)
 
+<<<<<<< Updated upstream
 # Import TqdmLoggingHandler
 try:
     from utils.logging_utils import TqdmLoggingHandler
@@ -61,34 +63,36 @@ except ImportError:
     tqdm.write = print
 
 # Import SmartFileLoader
+=======
+>>>>>>> Stashed changes
 from utils.file_validator import SmartFileLoader
 
+<<<<<<< Updated upstream
 # Windows Hadoop Workaround REMOVED
 
 # COMMAND ----------
 
 # Initialize Spark
+=======
+>>>>>>> Stashed changes
 def get_spark_session():
+    """Obtém ou cria a sessão Spark ativa."""
     return SparkSession.builder.getOrCreate()
 
 spark = get_spark_session()
-
-# Suppress logs
 spark.sparkContext.setLogLevel("WARN")
+
 log4j = spark._jvm.org.apache.log4j
 log4j.LogManager.getLogger("org.apache.spark").setLevel(log4j.Level.WARN)
 log4j.LogManager.getLogger("org.apache.hadoop").setLevel(log4j.Level.WARN)
 log4j.LogManager.getLogger("py4j").setLevel(log4j.Level.ERROR)
 
-# COMMAND ----------
-
-# DBUtils
 try:
     from pyspark.dbutils import DBUtils
     dbutils = DBUtils(spark)
 except ImportError:
-    # Fail fast if not on Databricks
     raise ImportError("Este script deve ser executado no Databricks (DBUtils required).")
+<<<<<<< Updated upstream
 
 
 # Configuration
@@ -97,25 +101,26 @@ except ImportError:
 from utils import config
 
 # Configura acesso via Key Vault ou SAS/Env (Centralizado)
+=======
+
+>>>>>>> Stashed changes
 protocol = config.configure_spark_access(spark)
 
-# Source Config
 SOURCE_ACCOUNT = config.SOURCE_ACCOUNT
 SOURCE_SAS = config.SAS_TOKEN_CNPJ
-SOURCE_KEY = config.LANDING_ACCOUNT_KEY # Agora busca do Key Vault se disponível
+SOURCE_KEY = config.LANDING_ACCOUNT_KEY
 
 SOURCE_CONTAINER = "cnpj"
-
-# Target Config
 TARGET_ACCOUNT = config.TARGET_ACCOUNT
 TARGET_CONTAINER = "raw"
 
-# Define caminhos base baseados no protocolo
 SOURCE_ABFSS_PATH = config.get_base_path(SOURCE_CONTAINER, "landing", protocol)
-
-# Ajuste: Adicionado /cnpj para garantir organização dentro do raw (raw/cnpj/empresas...)
 TARGET_ABFSS_PATH = f"{config.get_base_path(TARGET_CONTAINER, 'target', protocol)}/cnpj"
 
+<<<<<<< Updated upstream
+=======
+FORCE_FULL_LOAD = True
+>>>>>>> Stashed changes
 LOGS_CONTAINER = "$logs"
 LOGS_ABFSS_PATH = config.get_base_path(LOGS_CONTAINER, "target", protocol)
 
@@ -123,7 +128,6 @@ LOGS_ABFSS_PATH = config.get_base_path(LOGS_CONTAINER, "target", protocol)
 spark.conf.set("fs.azure.enable.check.access", "false")
 spark.conf.set("fs.azure.skipUserGroupMetadataDuringInitialization", "true")
 
-# Directories
 if os.name == 'nt':
     TMP_EXTRACT_DIR = os.path.join(tempfile.gettempdir(), "cnpj_extract")
     DBFS_STAGING_DIR = os.path.join(tempfile.gettempdir(), "cnpj_staging")
@@ -136,7 +140,6 @@ else:
 CSV_DELIMITER = ";"
 CSV_ENCODING = "ISO-8859-1"
 
-# Patterns
 ZIP_FILE_PATTERNS = [
     "Empresas*.zip",
     "Estabelecimentos*.zip",
@@ -151,8 +154,8 @@ ZIP_FILE_PATTERNS = [
 ]
 
 CSV_PATTERNS = {
-    "EMPRECSV": "Empresas*.csv",   # Matches key in JSON
-    "ESTABELE": "Estabelecimentos*.csv", # Matches key in JSON
+    "EMPRECSV": "Empresas*.csv",
+    "ESTABELE": "Estabelecimentos*.csv",
     "SOCIOCSV": "Socios*.csv",
     "SIMPLES": "Simples*.csv",
     "CNAECSV": "Cnaes*.csv",
@@ -163,7 +166,6 @@ CSV_PATTERNS = {
     "QUALIFICACOES": "Qualificacoes*.csv"
 }
 
-# Mapeamento para nomes de pastas amigáveis (conforme config.py)
 ENTITY_FOLDER_MAP = {
     "EMPRECSV": "empresas",
     "ESTABELE": "estabelecimentos",
@@ -177,9 +179,15 @@ ENTITY_FOLDER_MAP = {
     "QUALIFICACOES": "qualificacoes"
 }
 
+<<<<<<< Updated upstream
 # =============================================================================
 # CARREGAMENTO DE SCHEMA (Substitui COLUMN_NAMES hardcoded)
 # =============================================================================
+=======
+FORCE_FULL_LOAD = True
+processed_folders = set()
+
+>>>>>>> Stashed changes
 schema_path = os.path.join(project_root, 'docs', 'schemas', 'cnpj_schema.json')
 try:
     with open(schema_path, 'r', encoding='utf-8') as f:
@@ -187,13 +195,10 @@ try:
     print(f"Schema carregado de: {schema_path}")
 except Exception as e:
     print(f"Erro ao carregar schema CNPJ: {e}")
-    # Fallback vazio ou erro crítico? Melhor erro crítico ou logar
     COLUMN_NAMES = {}
 
-# COMMAND ----------
-
-# Logging
 class BlobStorageHandler(logging.Handler):
+    """Handler de log customizado para salvar logs no Azure Blob Storage."""
     def __init__(self, log_file_path: str):
         super().__init__()
         self.log_file_path = log_file_path
@@ -207,6 +212,7 @@ class BlobStorageHandler(logging.Handler):
             self.handleError(record)
     
     def flush_to_blob(self, blob_path: str):
+        """Faz o upload do buffer de log para o Blob Storage."""
         try:
             os.makedirs(os.path.dirname(self.log_file_path), exist_ok=True)
             with open(self.log_file_path, 'w', encoding='utf-8') as f:
@@ -217,6 +223,7 @@ class BlobStorageHandler(logging.Handler):
             print(f"Failed to save logs to blob: {str(e)}")
 
 def setup_logging(pipeline_run_id: str):
+    """Configura logging para console e Blob Storage."""
     logger = logging.getLogger('cnpj_pipeline')
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
@@ -237,209 +244,67 @@ def setup_logging(pipeline_run_id: str):
 
 # COMMAND ----------
 
-# Extraction Logic
-def download_data(logger):
+def ingest_cnpj_autoloader(entity_key, file_pattern, logger):
     """
-    Downloads zip files from Azure Blob Storage.
-    Extraction is now handled by SmartFileLoader during processing.
+    Ingestão incremental de ZIPs do CNPJ usando Autoloader.
+    
+    Args:
+        entity_key (str): Chave da entidade no mapeamento.
+        file_pattern (str): Padrão de glob para os arquivos ZIP.
+        logger: Objeto de logging.
     """
-    import fnmatch
-
-    try:
-        # Construct Container Client
-        if SOURCE_KEY:
-            # Authenticate with Account Key (Prioritized)
-            account_url = f"https://{SOURCE_ACCOUNT}.blob.core.windows.net"
-            container_client = ContainerClient(account_url=account_url, container_name=SOURCE_CONTAINER, credential=SOURCE_KEY)
-            logger.info(f"Authenticated with Account Key for container: {SOURCE_CONTAINER}")
-        elif SOURCE_SAS:
-            # Authenticate with SAS Token
-            container_url = f"https://{SOURCE_ACCOUNT}.blob.core.windows.net/{SOURCE_CONTAINER}?{SOURCE_SAS}"
-            container_client = ContainerClient.from_container_url(container_url)
-            logger.info(f"Authenticated with SAS Token for container: {SOURCE_CONTAINER}")
-        else:
-            logger.error("Source credentials (Key or SAS) missing. Cannot download data.")
-            return
-        
-        # Ensure directories exist
-        os.makedirs(TMP_EXTRACT_DIR, exist_ok=True)
-        # DBFS_STAGING_DIR will be used by SmartLoader for extraction
-        os.makedirs(DBFS_STAGING_DIR, exist_ok=True)
-        logger.info(f"Directories ready: {TMP_EXTRACT_DIR}, {DBFS_STAGING_DIR}")
-        
-        # List all blobs
-        logger.info("Listing blobs in source container...")
-        blobs = container_client.list_blobs()
-        
-        found_files = 0
-        for blob in blobs:
-            blob_name = blob.name
-            
-            # Check against patterns
-            match = False
-            for pattern in ZIP_FILE_PATTERNS:
-                if fnmatch.fnmatch(blob_name, pattern):
-                    match = True
-                    break
-            
-            if match:
-                found_files += 1
-                local_zip_path = os.path.join(TMP_EXTRACT_DIR, blob_name)
-                
-                # Retry logic for download
-                max_retries = 1
-                for attempt in range(max_retries + 1):
-                    should_download = True
-                    if os.path.exists(local_zip_path):
-                        # Verify integrity
-                        try:
-                            # Verifica tamanho mínimo (ex: 100 bytes) para evitar zips vazios
-                            if os.path.getsize(local_zip_path) < 100:
-                                logger.warning(f"Cached file {blob_name} is too small (<100b). Re-downloading...")
-                                os.remove(local_zip_path)
-                            else:
-                                with zipfile.ZipFile(local_zip_path, 'r') as zf:
-                                    if zf.testzip() is None:
-                                        logger.info(f"Using cached valid file: {blob_name}")
-                                        should_download = False
-                                    else:
-                                        logger.warning(f"Cached file {blob_name} is corrupted. Re-downloading...")
-                                        os.remove(local_zip_path)
-                        except zipfile.BadZipFile:
-                            logger.warning(f"Cached file {blob_name} is invalid (BadZipFile). Re-downloading...")
-                            os.remove(local_zip_path)
-                        except Exception:
-                            # Other errors (e.g. incomplete write), remove and retry
-                            logger.warning(f"Cached file {blob_name} check failed. Re-downloading...")
-                            if os.path.exists(local_zip_path):
-                                os.remove(local_zip_path)
-
-                    if should_download:
-                        logger.info(f"Downloading {blob_name} (Attempt {attempt+1})...")
-                        try:
-                            with open(local_zip_path, "wb") as f:
-                                download_stream = container_client.download_blob(blob.name)
-                                for chunk in download_stream.chunks():
-                                    f.write(chunk)
-                            logger.info(f"Downloaded: {blob_name}")
-                            break
-                        except Exception as e:
-                            logger.error(f"Failed to download {blob_name}: {e}")
-                            if os.path.exists(local_zip_path):
-                                os.remove(local_zip_path)
-                            break
-                    else:
-                        logger.info(f"Using cached file: {blob_name}")
-                        break
-        
-        if found_files == 0:
-            logger.warning("No matching zip files found in source container.")
-            
-    except Exception as e:
-        logger.error(f"Error in download: {e}")
-
-# DataFrame Loading and Saving Logic
-def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logger):
-    try:
-        # 1. Encontrar todos os arquivos ZIP correspondentes
-        zip_pattern = file_pattern_csv.replace(".csv", ".zip")
-        found_zips = sorted(glob.glob(os.path.join(TMP_EXTRACT_DIR, zip_pattern)))
-        
-        if not found_zips:
-            # Tenta busca case-insensitive ou sem sufixo numérico se falhar
-            logger.warning(f"[{entity_name}] Nenhum ZIP exato encontrado para {zip_pattern} em {TMP_EXTRACT_DIR}.")
-            # Fallback de busca manual
-            all_zips = glob.glob(os.path.join(TMP_EXTRACT_DIR, "*.zip"))
-            logger.info(f"[{entity_name}] Arquivos disponíveis na pasta: {[os.path.basename(z) for z in all_zips]}")
+    entity_name = ENTITY_FOLDER_MAP.get(entity_key, entity_key.lower())
+    source_path = SOURCE_ABFSS_PATH
+    target_path = f"{TARGET_ABFSS_PATH}/{entity_name}"
+    checkpoint_path = f"{TARGET_ABFSS_PATH}/_checkpoints/{entity_name}"
+    
+    logger.info(f"🚀 [Autoloader] Processando CNPJ: {entity_name} ({file_pattern})")
+    
+    df_zips = (spark.readStream
+        .format("cloudFiles")
+        .option("cloudFiles.format", "binaryFile")
+        .option("pathGlobFilter", file_pattern)
+        .load(source_path)
+    )
+    
+    def process_batch(batch_df, batch_id):
+        if batch_df.count() == 0:
             return
             
-        logger.info(f"[{entity_name}] Found {len(found_zips)} zip files to process.")
-        
-        first_batch = True
-        
-        for zip_file in found_zips:
-            try:
-                logger.info(f"[{entity_name}] Processing batch: {os.path.basename(zip_file)}")
+        for row in batch_df.collect():
+            zip_path = row.path
+            logger.info(f"   📦 Extraindo: {zip_path}")
+            
+            temp_zip = os.path.join(TMP_EXTRACT_DIR, os.path.basename(zip_path))
+            os.makedirs(TMP_EXTRACT_DIR, exist_ok=True)
+            
+            dbutils.fs.cp(zip_path, f"file:{temp_zip}")
+            
+            with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
+                zip_ref.extractall(TMP_EXTRACT_DIR)
+                extracted_files = zip_ref.namelist()
                 
-                # 2. Smart Load
-                loader = SmartFileLoader(temp_dir=DBFS_STAGING_DIR)
-                file_info = loader.inspect_and_prepare(zip_file)
-                
-                # Validação de formato (Novo)
-                if file_info.get('format') == 'unknown':
-                    logger.error(f"[{entity_name}] ❌ Erro de validação: Formato desconhecido ou não suportado para {os.path.basename(zip_file)}")
-                    continue
-                
-                spark_path = file_info['path']
-                
-                # [DATABRICKS COMPATIBILITY]
-                # Se estiver no Databricks (Env Var ou /dbfs), mover arquivo local (/tmp) para DBFS
-                is_databricks = ("DATABRICKS_RUNTIME_VERSION" in os.environ or os.path.exists("/dbfs")) and os.name != 'nt'
-                
-                df_raw = None
-
-                if is_databricks:
-                    logger.info(f"[{entity_name}] [Databricks] Preparando leitura otimizada...")
-                    # NOTA: Assim como na Balança, manteremos a leitura Batch para o CNPJ
-                    # pois dependemos do download e extração local dos ZIPs.
-                    # O Auto Loader puro seria ideal se lêssemos direto da Landing, 
-                    # mas isso exigiria mudar a estratégia de extração de ZIPs on-the-fly.
+                for f in extracted_files:
+                    local_extracted = os.path.join(TMP_EXTRACT_DIR, f)
                     
-                    try:
-                        fname = os.path.basename(spark_path)
-                        dbfs_bridge_path = f"dbfs:/tmp/cnpj_bridge/{fname}"
-                        
-                        try:
-                            from pyspark.dbutils import DBUtils
-                            dbutils = DBUtils(spark)
-                            src_path_with_schema = f"file:{spark_path}" if not spark_path.startswith("file:") else spark_path
-                            dbutils.fs.cp(src_path_with_schema, dbfs_bridge_path)
-                            spark_path = dbfs_bridge_path
-                        except ImportError:
-                            if os.path.exists("/dbfs"):
-                                dbfs_dir = os.path.join("/dbfs", "tmp", "cnpj_bridge")
-                                os.makedirs(dbfs_dir, exist_ok=True)
-                                dbfs_path_os = os.path.join(dbfs_dir, fname)
-                                import shutil
-                                shutil.copy2(spark_path, dbfs_path_os)
-                                spark_path = f"dbfs:/tmp/cnpj_bridge/{fname}"
-                            else:
-                                spark_path = f"file://{spark_path}"
-                                
-                    except Exception as e:
-                        logger.warning(f"[{entity_name}] Falha ao mover para DBFS: {e}. Tentando file://")
-                        spark_path = f"file://{spark_path}"
-
-                    logger.info(f"[{entity_name}] Reading with Spark from: {spark_path}")
-                    df_raw = spark.read.format(file_info['format']).options(**file_info['options']).load(spark_path)
-
-                else:
-                    # LOCAL MODE
-                    logger.info(f"[{entity_name}] Reading with Spark (Local) from: {spark_path}")
-                    df_raw = spark.read.format(file_info['format']).options(**file_info['options']).load(spark_path)
-                
-                # 3. Rename/Select Columns
-                column_names = COLUMN_NAMES.get(entity_name, [])
-                df_to_write = df_raw
-                
-                if column_names:
-                    current_cols = df_raw.columns
-                    final_selects = []
-                    for i, col_name in enumerate(column_names):
-                        spark_col = f"_c{i}"
-                        if spark_col in current_cols:
-                            final_selects.append(F.col(spark_col).alias(col_name))
+                    df_extracted = (spark.read
+                        .format("csv")
+                        .option("header", "false")
+                        .option("delimiter", CSV_DELIMITER)
+                        .option("encoding", CSV_ENCODING)
+                        .load(f"file:{local_extracted}")
+                    )
                     
-                    # Schema evolution (extra columns)
-                    for col in current_cols:
-                        if col.startswith("_c"):
-                            try:
-                                col_idx = int(col[2:])
-                                if col_idx >= len(column_names):
-                                    final_selects.append(F.col(col))
-                            except ValueError:
-                                pass
+                    cols = COLUMN_NAMES.get(entity_key, [])
+                    if cols:
+                        current_cols = df_extracted.columns
+                        if len(current_cols) > len(cols):
+                            final_cols = cols + [f"_c{i}" for i in range(len(cols), len(current_cols))]
+                            df_extracted = df_extracted.toDF(*final_cols)
+                        else:
+                            df_extracted = df_extracted.toDF(*cols[:len(current_cols)])
                     
+<<<<<<< Updated upstream
                     df_to_write = df_raw.select(*final_selects)
                 
                 # 4. Save to Delta
@@ -466,17 +331,31 @@ def process_entity(entity_name: str, file_pattern_csv: str, logger: logging.Logg
                         logger.info(f"   [DEBUG] Mantendo arquivo temporário em: {file_info['path']}")
                 except:
                     pass
+=======
+                    (df_extracted.write
+                        .format("delta")
+                        .mode("append")
+                        .option("mergeSchema", "true")
+                        .save(target_path)
+                    )
+>>>>>>> Stashed changes
                     
-            except Exception as e:
-                logger.error(f"[{entity_name}] Error processing zip {zip_file}: {str(e)}")
-                # Continue to next zip?
-                
-    except Exception as e:
-        logger.error(f"[{entity_name}] Critical error: {str(e)}")
+                    os.remove(local_extracted)
+            
+            os.remove(temp_zip)
 
-# COMMAND ----------
+    query = (df_zips.writeStream
+        .foreachBatch(process_batch)
+        .option("checkpointLocation", checkpoint_path)
+        .trigger(availableNow=True)
+        .start()
+    )
+    
+    query.awaitTermination()
+    logger.info(f"✅ Ingestão de {entity_name} concluída.")
 
 def run_pipeline():
+    """Executa o pipeline completo de ingestão do CNPJ."""
     start_time = datetime.now()
     pipeline_run_id = start_time.strftime('%Y%m%d_%H%M%S')
     logger, blob_handler = setup_logging(pipeline_run_id)
@@ -486,33 +365,28 @@ def run_pipeline():
     logger.info(f"Run ID: {pipeline_run_id}")
     logger.info("="*80)
     
-    if os.name == 'nt':
-        TMP_EXTRACT_DIR = os.path.join(tempfile.gettempdir(), "cnpj_extract")
-        DBFS_STAGING_DIR = os.path.join(tempfile.gettempdir(), "cnpj_staging")
-        TMP_LOG_DIR = os.path.join(tempfile.gettempdir(), "cnpj_logs")
-    else:
-        TMP_EXTRACT_DIR = "/tmp/cnpj_extract"
-        DBFS_STAGING_DIR = "/tmp/cnpj"
-        TMP_LOG_DIR = "/tmp/cnpj_logs"
-
-    # Log dos diretórios para debug do usuário
     logger.info(f"📂 Diretório de Download (ZIPs): {TMP_EXTRACT_DIR}")
     logger.info(f"📂 Diretório de Staging (Extração): {DBFS_STAGING_DIR}")
     logger.info(f"📂 Diretório de Logs: {TMP_LOG_DIR}")
     
-    # Run Extraction (Download from Azure)
-    download_data(logger)
-    
     total_entities = len(CSV_PATTERNS)
+<<<<<<< Updated upstream
     with tqdm(total=total_entities, desc="Processing Entities") as pbar:
         for entity_name, file_pattern in CSV_PATTERNS.items():
             process_entity(entity_name, file_pattern, logger)
             pbar.update(1)
+=======
+    logger.info(f"Processing {total_entities} entities using Autoloader...")
+    for entity_key, pattern in CSV_PATTERNS.items():
+        zip_pattern = pattern.replace(".csv", ".zip")
+        try:
+            ingest_cnpj_autoloader(entity_key, zip_pattern, logger)
+        except Exception as e:
+            logger.error(f"❌ Erro ao processar {entity_key}: {e}")
+>>>>>>> Stashed changes
             
     logger.info("PIPELINE COMPLETED")
     blob_handler.flush_to_blob(f"{LOGS_ABFSS_PATH}/cnpj_pipeline_{pipeline_run_id}.log")
-
-# COMMAND ----------
 
 if __name__ == "__main__":
     run_pipeline()

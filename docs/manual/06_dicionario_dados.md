@@ -1,4 +1,4 @@
-[🏠 Home](../../README.md) | [Escopo](./00_escopo_e_cronograma.md) | [Visão Geral](./01_visao_geral.md) | [Configuração](./02_configuracao_ambiente.md) | [Execução](./03_execucao_pipeline.md) | [Arquitetura](./04_arquitetura_detalhada.md) | [Troubleshooting](./05_guia_troubleshooting.md) | **Dicionário**
+[🏠 Home](../../README.md) | [Escopo](./00_escopo_e_cronograma.md) | [Visão Geral](./01_visao_geral.md) | [Configuração](./02_configuracao_ambiente.md) | [Execução](./03_execucao_pipeline.md) | [Arquitetura](./04_arquitetura_detalhada.md) | [Troubleshooting](./05_guia_troubleshooting.md) | **Dicionário** | [Sumário](./index.md)
 
 ---
 
@@ -11,35 +11,30 @@ Este documento descreve detalhadamente as tabelas e colunas disponíveis na cama
 1.  [Fato Balanço Comercial (`ft_balanco_comercial`)](#1-fato-balanço-comercial-ft_balanco_comercial)
 2.  [Dimensão Data (`dim_data`)](#2-dimensão-data-dim_data)
 3.  [Dimensão NCM (`dim_ncm`)](#3-dimensão-ncm-dim_ncm)
-4.  [Dimensão Países (`dim_paises`)](#4-dimensão-países-dim_paises)
-5.  [Dimensão UFs (`dim_ufs`)](#5-dimensão-ufs-dim_ufs)
-6.  [Dimensão Via Transporte (`dim_via_transporte`)](#6-dimensão-via-transporte-dim_via_transporte)
-7.  [Dimensão Distribuição Estabelecimentos (`dim_distribuicao_estabelecimentos`)](#7-dimensão-distribuição-estabelecimentos-dim_distribuicao_estabelecimentos)
+4.  [Dimensão Geografia (`dim_geografia`)](#4-dimensão-geografia-dim_geografia)
+5.  [Dimensão Via Transporte (`dim_via_transporte`)](#5-dimensão-via-transporte-dim_via_transporte)
+6.  [Dimensão Distribuição Estabelecimentos (`dim_distribuicao_estabelecimentos`)](#6-dimensão-distribuição-estabelecimentos-dim_distribuicao_estabelecimentos)
 
 ---
 
 ## 1. Fato Balanço Comercial (`ft_balanco_comercial`)
 
 Tabela central que unifica transações de Importação e Exportação.
-*   **Granularidade**: Uma linha por NCM, País, UF, Via e Mês.
+*   **Granularidade**: Uma linha por NCM, Geografia (País/UF), Via e Mês.
 *   **Particionamento**: `tipo_movimentacao` (EXPORTACAO/IMPORTACAO).
 
 | Coluna | Tipo | Chave | Descrição | Exemplo |
 | :--- | :--- | :---: | :--- | :--- |
 | `sk_ncm` | `BIGINT` | FK | Chave substituta para o produto (NCM). | `1012100` |
-| `sk_pais` | `BIGINT` | FK | Chave substituta para o país. | `76` |
-| `sk_uf` | `BIGINT` | FK | Chave substituta para a UF (apenas Brasil). | `8380` |
+| `sk_geografia` | `BIGINT` | FK | Chave substituta para o país parceiro. | `76` |
+| `sk_geografia_uf` | `BIGINT` | FK | Chave substituta para a UF de origem/destino. | `8380` |
 | `sk_via_transporte` | `BIGINT` | FK | Chave substituta para a via de transporte. | `1` |
 | `sk_data` | `BIGINT` | FK | Chave substituta para o período (AAAAMM). | `202401` |
-| `tipo_movimentacao` | `STRING` | - | Indica se é 'EXPORTACAO' ou 'IMPORTACAO' (Partição). | `EXPORTACAO` |
+| `tipo_movimentacao` | `STRING` | - | Indica se é 'EXPORTACAO' ou 'IMPORTACAO'. | `EXPORTACAO` |
 | `valor_fob` | `DECIMAL(18,2)` | - | Valor da mercadoria em Dólares Americanos (FOB). | `1500.50` |
 | `quantidade` | `DECIMAL(18,2)` | - | Quantidade estatística da mercadoria. | `100.00` |
 | `kg_liquido` | `DECIMAL(18,2)` | - | Peso líquido da mercadoria em KG. | `120.50` |
-| `valor_unitario` | `DECIMAL(18,2)` | - | Cálculo: `valor_fob / quantidade`. | `15.00` |
-| `preco_kg` | `DECIMAL(18,2)` | - | Cálculo: `valor_fob / kg_liquido`. | `12.45` |
-| `flag_exportacao` | `INT` | - | Flag binária (1=Sim, 0=Não) para facilitar somas. | `1` |
-| `flag_importacao` | `INT` | - | Flag binária (1=Sim, 0=Não) para facilitar somas. | `0` |
-| `dt_atualizacao` | `TIMESTAMP` | - | Data e hora da última atualização do registro. | `2024-02-09 10:00:00` |
+| `data_processamento_gold` | `TIMESTAMP` | - | Data e hora do processamento. | `2024-02-09 10:00:00` |
 
 ### Exemplo de Uso: Balança Comercial Mensal (Saldo)
 
@@ -50,11 +45,10 @@ SELECT
     d.ano,
     d.mes,
     d.nome_mes,
-    -- Soma condicional usando as flags para performance
-    SUM(CASE WHEN f.flag_exportacao = 1 THEN f.valor_fob ELSE 0 END) as total_exportacao,
-    SUM(CASE WHEN f.flag_importacao = 1 THEN f.valor_fob ELSE 0 END) as total_importacao,
-    (SUM(CASE WHEN f.flag_exportacao = 1 THEN f.valor_fob ELSE 0 END) - 
-     SUM(CASE WHEN f.flag_importacao = 1 THEN f.valor_fob ELSE 0 END)) as saldo_comercial
+    SUM(CASE WHEN f.tipo_movimentacao = 'EXPORTACAO' THEN f.valor_fob ELSE 0 END) as total_exportacao,
+    SUM(CASE WHEN f.tipo_movimentacao = 'IMPORTACAO' THEN f.valor_fob ELSE 0 END) as total_importacao,
+    (SUM(CASE WHEN f.tipo_movimentacao = 'EXPORTACAO' THEN f.valor_fob ELSE 0 END) - 
+     SUM(CASE WHEN f.tipo_movimentacao = 'IMPORTACAO' THEN f.valor_fob ELSE 0 END)) as saldo_comercial
 FROM gold.ft_balanco_comercial f
 JOIN gold.dim_data d ON f.sk_data = d.sk_data
 WHERE d.ano >= 2024
@@ -89,7 +83,7 @@ SELECT
     SUM(f.valor_fob) as total_exportado
 FROM gold.ft_balanco_comercial f
 JOIN gold.dim_data d ON f.sk_data = d.sk_data
-WHERE f.flag_exportacao = 1
+WHERE f.tipo_movimentacao = 'EXPORTACAO'
 GROUP BY d.ano, d.trimestre
 ORDER BY d.ano DESC, d.trimestre DESC;
 ```
@@ -122,7 +116,7 @@ SELECT
     SUM(f.kg_liquido) as peso_liquido_total
 FROM gold.ft_balanco_comercial f
 JOIN gold.dim_ncm n ON f.sk_ncm = n.sk_ncm
-WHERE f.flag_exportacao = 1  -- Filtra apenas exportações
+WHERE f.tipo_movimentacao = 'EXPORTACAO'  -- Filtra apenas exportações
   AND f.sk_data BETWEEN 202401 AND 202412 -- Filtro de partição (Rápido)
 GROUP BY n.codigo_ncm, n.descricao_ncm, n.setor_economico
 ORDER BY valor_total_exportado DESC
@@ -131,66 +125,38 @@ LIMIT 10;
 
 ---
 
-## 4. Dimensão Países (`dim_paises`)
+## 4. Dimensão Geografia (`dim_geografia`)
 
-Dados normalizados de países e blocos econômicos.
+Tabela unificada que contém informações de Países e Unidades Federativas (UFs).
 
 | Coluna | Tipo | Chave | Descrição | Exemplo |
 | :--- | :--- | :---: | :--- | :--- |
-| `sk_pais` | `BIGINT` | PK | Chave primária (código do país). | `76` |
-| `codigo_pais` | `INT` | - | Código original do país. | `76` |
-| `sigla_pais` | `STRING` | - | Sigla do país (ex: BRA). | `BRA` |
-| `nome_pais` | `STRING` | - | Nome completo do país. | `Brasil` |
-| `bloco_economico` | `STRING` | - | Bloco econômico ao qual o país pertence (ex: Mercosul, UE). | `Mercosul` |
+| `sk_geografia` | `BIGINT` | PK | Chave primária (Código do País ou Hash da UF). | `76` ou `8380` |
+| `codigo_referencia` | `STRING` | - | Código original (ISO do país ou Sigla da UF). | `76` ou `SP` |
+| `nome_geografia` | `STRING` | - | Nome amigável da localidade. | `Brasil` ou `São Paulo` |
+| `nivel` | `STRING` | - | Nível da geografia (PAIS ou UF). | `PAIS` |
+| `sigla` | `STRING` | - | Sigla da localidade. | `BRA` ou `SP` |
+| `regiao_ou_bloco` | `STRING` | - | Região (para UFs) ou Bloco Econômico (para Países). | `Mercosul` ou `Sudeste` |
 
-### Exemplo de Uso: Análise de Parceiros Comerciais
+### Exemplo de Uso: Análise de Parceiros e Origens
 
-Analisa de quais países o Brasil mais importa mercadorias.
+Analisa a movimentação por país parceiro e UF de origem/destino.
 
 ```sql
 SELECT 
-    p.nome_pais,
-    p.bloco_economico,
-    SUM(f.valor_fob) as valor_total_importado
+    g.nome_geografia,
+    g.nivel,
+    SUM(f.valor_fob) as valor_total
 FROM gold.ft_balanco_comercial f
-JOIN gold.dim_paises p ON f.sk_pais = p.sk_pais
-WHERE f.flag_importacao = 1
-GROUP BY p.nome_pais, p.bloco_economico
-ORDER BY valor_total_importado DESC;
+JOIN gold.dim_geografia g ON f.sk_geografia = g.sk_geografia
+WHERE f.tipo_movimentacao = 'IMPORTACAO'
+GROUP BY g.nome_geografia, g.nivel
+ORDER BY valor_total DESC;
 ```
 
 ---
 
-## 5. Dimensão UFs (`dim_ufs`)
-
-Unidades Federativas do Brasil e suas regiões.
-
-| Coluna | Tipo | Chave | Descrição | Exemplo |
-| :--- | :--- | :---: | :--- | :--- |
-| `sk_uf` | `BIGINT` | PK | Chave primária gerada via hash da sigla. | `8380` |
-| `sigla_uf` | `STRING` | - | Sigla da UF. | `SP` |
-| `nome_uf` | `STRING` | - | Nome completo da UF. | `São Paulo` |
-| `regiao` | `STRING` | - | Região geográfica (Sudeste, Norte, etc.). | `Sudeste` |
-| `sk_pais` | `BIGINT` | FK | Chave estrangeira para o país (fixo Brasil=105). | `105` |
-
-### Exemplo de Uso: Exportações por Região
-
-Analisa o volume de exportações por região geográfica do Brasil.
-
-```sql
-SELECT 
-    u.regiao,
-    SUM(f.valor_fob) as valor_total_exportado
-FROM gold.ft_balanco_comercial f
-JOIN gold.dim_ufs u ON f.sk_uf = u.sk_uf
-WHERE f.flag_exportacao = 1
-GROUP BY u.regiao
-ORDER BY valor_total_exportado DESC;
-```
-
----
-
-## 6. Dimensão Via Transporte (`dim_via_transporte`)
+## 5. Dimensão Via Transporte (`dim_via_transporte`)
 
 Modal logístico utilizado na operação.
 
@@ -218,7 +184,7 @@ ORDER BY valor_total DESC;
 
 ---
 
-## 7. Dimensão Distribuição Estabelecimentos (`dim_distribuicao_estabelecimentos`)
+## 6. Dimensão Distribuição Estabelecimentos (`dim_distribuicao_estabelecimentos`)
 
 Tabela analítica agregada que apresenta a distribuição de empresas ativas por CNAE, Porte e UF.
 

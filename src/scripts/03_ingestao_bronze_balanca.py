@@ -18,15 +18,22 @@ import tempfile
 import pyspark.sql.functions as F
 from pyspark.sql import SparkSession
 
+<<<<<<< Updated upstream
 # =============================================================================
 # LOGGING SETUP
 # =============================================================================
+=======
+"""
+Script de Ingestão Bronze para dados da Balança Comercial.
+Responsável por mover dados da camada Landing para a camada Bronze usando Databricks Autoloader.
+"""
+
+>>>>>>> Stashed changes
 try:
     base_dir = os.path.dirname(os.path.abspath(__file__))
 except NameError:
     base_dir = os.getcwd()
 
-# Navega para cima até encontrar a pasta 'src'
 project_root = base_dir
 while not os.path.exists(os.path.join(project_root, 'src')) and project_root != os.path.dirname(project_root):
     project_root = os.path.dirname(project_root)
@@ -38,6 +45,7 @@ src_path = os.path.join(project_root, "src")
 if src_path not in sys.path:
     sys.path.append(src_path)
 
+<<<<<<< Updated upstream
 try:
     from utils.logging_utils import TqdmLoggingHandler
 except ImportError:
@@ -48,6 +56,10 @@ except ImportError:
                 print(msg) # Simple fallback
             except Exception:
                 self.handleError(record)
+=======
+import utils.config as config
+from utils.file_validator import SmartFileLoader
+>>>>>>> Stashed changes
 
 logger = logging.getLogger("IngestaoBronzeBalanca")
 logger.setLevel(logging.INFO)
@@ -56,6 +68,7 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S'))
     logger.addHandler(handler)
 
+<<<<<<< Updated upstream
 import utils.config as config
 from utils.file_validator import SmartFileLoader
 from azure.storage.blob import ContainerClient
@@ -65,40 +78,40 @@ from azure.storage.blob import ContainerClient
 # =============================================================================
 # COMMAND ----------
 
+=======
+>>>>>>> Stashed changes
 def get_spark_session():
-    # No Databricks, a sessão já existe.
+    """Obtém ou cria a sessão Spark ativa."""
     return SparkSession.builder.getOrCreate()
 
 spark = get_spark_session()
 
-# =============================================================================
-# CONFIGURAÇÕES DE STORAGE E ACESSO
-# =============================================================================
-# COMMAND ----------
-
-# Configura acesso via Key Vault (Secret Scopes)
+# Configurações de Acesso
 protocol = config.configure_spark_access(spark)
 
 SOURCE_CONTAINER = "balancacomercial"
 SOURCE_ACCOUNT = config.SOURCE_ACCOUNT
 SOURCE_SAS = config.SAS_TOKEN_BALANCA
-
 TARGET_CONTAINER = "raw"
 
-# Define caminhos base
 SOURCE_ABFSS_PATH = config.get_base_path(SOURCE_CONTAINER, "landing", protocol)
 TARGET_ABFSS_PATH = config.get_base_path(TARGET_CONTAINER, "target", protocol)
 
+<<<<<<< Updated upstream
 # =============================================================================
 # CARREGAMENTO DE SCHEMA
 # =============================================================================
 # COMMAND ----------
+=======
+FORCE_FULL_LOAD = True
+processed_folders = set()
+>>>>>>> Stashed changes
 
 schema_path = os.path.join(project_root, 'docs', 'schemas', 'balanca_schema.json')
 try:
     with open(schema_path, 'r', encoding='utf-8') as f:
         full_schema = json.load(f)
-    logger.info(f"Schema carregado.")
+    logger.info("Schema carregado.")
 except Exception as e:
     logger.error(f"Erro ao carregar schema: {e}")
     full_schema = {}
@@ -133,27 +146,44 @@ def get_mapping_for_file(filename):
             
     return None
 
-# =============================================================================
-# LÓGICA DE INGESTÃO
-# =============================================================================
-# COMMAND ----------
-
-arquivos_para_ignorar = []
-
-logger.info(f"Listando arquivos em: {SOURCE_CONTAINER} (via Azure SDK)")
-
-try:
-    # Tenta usar credenciais do Key Vault (configuradas no config.py)
-    if config.LANDING_ACCOUNT_KEY:
-        account_url = f"https://{SOURCE_ACCOUNT}.blob.core.windows.net"
-        container_client = ContainerClient(account_url=account_url, container_name=SOURCE_CONTAINER, credential=config.LANDING_ACCOUNT_KEY)
-        logger.info("Autenticado com Account Key (Key Vault/Env).")
+def ingest_with_autoloader(entity_name, file_pattern, schema_mapping=None):
+    """
+    Ingere dados usando Databricks Autoloader (cloudFiles).
+    
+    Args:
+        entity_name (str): Nome da entidade/pasta de destino.
+        file_pattern (str): Padrão de glob para identificar os arquivos.
+        schema_mapping (dict, optional): Mapeamento de renomeação de colunas.
+    """
+    source_path = SOURCE_ABFSS_PATH
+    target_path = f"{TARGET_ABFSS_PATH}/balancacomercial/{entity_name}"
+    checkpoint_path = f"{TARGET_ABFSS_PATH}/_checkpoints/balanca/{entity_name}"
+    
+    logger.info(f"\n🚀 Iniciando Autoloader para: {entity_name}")
+    logger.info(f"   Pattern: {file_pattern}")
+    
+    df_stream = (spark.readStream
+        .format("cloudFiles")
+        .option("cloudFiles.format", "csv")
+        .option("cloudFiles.schemaLocation", checkpoint_path)
+        .option("cloudFiles.inferColumnTypes", "true")
+        .option("header", "true")
+        .option("delimiter", ";")
+        .option("encoding", "ISO-8859-1")
+        .option("pathGlobFilter", file_pattern)
+        .load(source_path)
+    )
+    
+    if schema_mapping:
+        cols_to_select = []
+        for old_col, new_col in schema_mapping.items():
+            cols_to_select.append(F.col(old_col).alias(new_col))
+        df_stream = df_stream.select(*cols_to_select)
     else:
-        # Fallback para SAS Token
-        container_url = f"https://{SOURCE_ACCOUNT}.blob.core.windows.net/{SOURCE_CONTAINER}?{SOURCE_SAS}"
-        container_client = ContainerClient.from_container_url(container_url)
-        logger.info("Autenticado com SAS Token.")
+        for col_name in df_stream.columns:
+            df_stream = df_stream.withColumnRenamed(col_name, col_name.lower().replace(" ", "_"))
 
+<<<<<<< Updated upstream
     blobs = container_client.list_blobs()
     arquivos = []
     for blob in blobs:
@@ -184,71 +214,50 @@ pbar = tqdm.tqdm(arquivos_filtrados, desc="Ingestão Bronze")
 
 for blob_name, name in pbar:
     pbar.set_description(f"Ingerindo: {name}")
+=======
+    query = (df_stream.writeStream
+        .format("delta")
+        .outputMode("append")
+        .option("checkpointLocation", checkpoint_path)
+        .option("mergeSchema", "true")
+        .trigger(availableNow=True)
+        .start(target_path)
+    )
+>>>>>>> Stashed changes
     
-    file_temp_dir = os.path.join(TEMP_DIR, f"staging_{name}")
-    os.makedirs(file_temp_dir, exist_ok=True)
-    local_path = os.path.join(file_temp_dir, name)
-    
-    try:
-        # 1. Download (Azure -> Driver Local)
-        with open(local_path, "wb") as f:
-            download_stream = container_client.download_blob(blob_name)
-            f.write(download_stream.readall())
-        
-        # 2. Inspeção e Preparação (SmartFileLoader)
-        loader = SmartFileLoader(temp_dir=file_temp_dir)
-        file_info = loader.inspect_and_prepare(local_path)
+    query.awaitTermination()
+    logger.info(f"✅ Ingestão de {entity_name} concluída com sucesso.")
 
-        if file_info.get('format') == 'unknown':
-            logger.error(f"   ❌ Erro de validação: Formato não suportado para {name}")
-            continue
+entities_to_process = {
+    "exp": ("EXP_*.csv", full_schema.get("EXPO_2021")),
+    "imp": ("IMP_*.csv", full_schema.get("IMP_2021")),
+    "exp_mun": ("EXP_*_MUN.csv", full_schema.get("EXP_2021_MUN")),
+    "imp_mun": ("IMP_*_MUN.csv", full_schema.get("IMP_2021_MUN")),
+    "ncm": ("NCM.csv", full_schema.get("NCM")),
+    "pais": ("PAIS.csv", full_schema.get("PAIS")),
+    "via": ("VIA.csv", full_schema.get("VIA")),
+    "ncm_unidade": ("NCM_UNIDADE.csv", full_schema.get("NCM_UNIDADE")),
+    "ncm_cgce": ("NCM_CGCE.csv", full_schema.get("NCM_CGCE")),
+    "ncm_cuci": ("NCM_CUCI.csv", full_schema.get("NCM_CUCI")),
+    "ncm_isic": ("NCM_ISIC.csv", full_schema.get("NCM_ISIC")),
+    "ncm_itn": ("NCM_ITN.csv", full_schema.get("NCM_ITN"))
+}
 
-        effective_filename = os.path.basename(file_info['path'])
-        nome_base = os.path.splitext(effective_filename)[0]
-        nome_limpo = re.sub(r'_\d{4}', '', nome_base) 
-        nome_pasta_assunto = nome_limpo.replace("__", "_").strip("_").lower()
-        nome_pasta_raw = f"balancacomercial/{nome_pasta_assunto}"
-        
-        if file_info.get('format') == 'csv':
-            file_info['options']['encoding'] = 'ISO-8859-1'
-
-        spark_path = local_path 
-        
-        # 3. Mover para DBFS (Obrigatório para Spark Cluster ler do Driver)
+def run_ingestion():
+    """Executa a pipeline de ingestão para todas as entidades configuradas."""
+    logger.info("Iniciando Pipeline de Ingestão Bronze (Balança Comercial)...")
+    for entity, (pattern, mapping) in entities_to_process.items():
         try:
-            from pyspark.dbutils import DBUtils
-            dbutils = DBUtils(spark)
-            
-            fname = os.path.basename(spark_path)
-            dbfs_bridge_path = f"dbfs:/tmp/balanca_bridge/{fname}"
-            
-            # Copia do Driver (file:) para DBFS (dbfs:)
-            src_path_with_schema = f"file:{spark_path}" if not spark_path.startswith("file:") else spark_path
-            dbutils.fs.cp(src_path_with_schema, dbfs_bridge_path)
-            
-            spark_path = dbfs_bridge_path
-            logger.info(f"   Arquivo movido para DBFS: {spark_path}")
-            
-        except ImportError:
-            logger.error("   ❌ DBUtils não disponível. Este script requer ambiente Databricks.")
-            continue
+            ingest_with_autoloader(entity, pattern, mapping)
+        except Exception as e:
+            logger.error(f"Erro ao processar {entity}: {e}")
 
-        # 4. Leitura e Escrita
-        df_temp = spark.read.format(file_info['format']).options(**file_info['options']).load(spark_path)
+if __name__ == "__main__":
+    run_ingestion()
 
-        mapping = get_mapping_for_file(effective_filename)
-        if mapping:
-            cols_to_select = []
-            for old_col, new_col in mapping.items():
-                if old_col in df_temp.columns:
-                    cols_to_select.append(F.col(old_col).alias(new_col))
-            if cols_to_select:
-                df_temp = df_temp.select(*cols_to_select)
-        else:
-            for col_name in df_temp.columns:
-                novo_nome = col_name.lower().replace(" ", "_")
-                df_temp = df_temp.withColumnRenamed(col_name, novo_nome)
+logger.info("\n--- Processo de Ingestão Autoloader Finalizado ---")
 
+<<<<<<< Updated upstream
         path_destino = f"{TARGET_ABFSS_PATH}/{nome_pasta_raw}"
         
         (df_temp.write 
@@ -266,3 +275,5 @@ for blob_name, name in pbar:
         # Opcional: Limpar DBFS bridge também se desejar economizar espaço, mas /tmp é limpo eventualmente.
 
 logger.info("--- Processo de Ingestão Finalizado ---")
+=======
+>>>>>>> Stashed changes
