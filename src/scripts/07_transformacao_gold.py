@@ -1,10 +1,3 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Modelagem Gold: Star Schema
-# MAGIC 
-# MAGIC Criação de dimensões e tabelas fato para análise (Silver -> Gold).
-
-
 import os
 import sys
 import logging

@@ -1,9 +1,3 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Transformação Silver: Dados CNPJ
-# MAGIC 
-# MAGIC Aplicação de schema, limpeza e padronização dos dados de CNPJ (Bronze -> Silver).
-
 import os
 import sys
 import json

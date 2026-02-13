@@ -1,10 +1,3 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Listagem de Arquivos no Azure Blob Storage
-# MAGIC 
-# MAGIC Lista arquivos nos containers de origem (Landing/Raw) para diagnóstico e verificação.
-
-
 import os
 import sys
 

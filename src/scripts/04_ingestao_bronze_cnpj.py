@@ -1,9 +1,3 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Ingestão Bronze: Dados Públicos CNPJ
-# MAGIC 
-# MAGIC Ingestão e extração de dados públicos do CNPJ (ZIPs) para a camada Bronze.
-
 import os
 import sys
 import logging
