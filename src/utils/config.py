@@ -2,7 +2,6 @@
 import os
 from dotenv import load_dotenv
 
-# --- Carregamento de Variáveis de Ambiente ---
 # Configuração robusta de caminhos (Híbrido Local/Databricks)
 try:
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -28,7 +27,6 @@ if not loaded:
     load_dotenv()
 
 
-# --- Key Vault & Protocols ---
 USE_KEY_VAULT = False # Definido como False para usar apenas .env por enquanto
 
 # Detecta se está rodando no Databricks
@@ -38,7 +36,6 @@ DATABRICKS_SCOPE = "databricks-scope-4"
 KV_SECRET_TARGET = "secret-storage-4"
 KV_SECRET_LANDING = "secret-landing"
 
-# --- Helpers de Configuração ---
 def get_config(key, default=None, secret_key=None):
     """
     Tenta recuperar configuração de múltiplas fontes:
@@ -70,8 +67,6 @@ def get_config(key, default=None, secret_key=None):
     return default
 
 
-# --- Configurações de Storage ---
-
 # 1. ORIGEM (Landing)
 BALANCA_URL = get_config("BALANCA_ACCOUNT_URL")
 CNPJ_URL = get_config("CNPJ_ACCOUNT_URL")
@@ -99,7 +94,6 @@ TARGET_RAW_URL = get_config("AZURE_TARGET_STORAGE_RAW_URL")
 TARGET_TRUSTED_URL = get_config("AZURE_TARGET_STORAGE_TRUSTED_URL")
 TARGET_REFINED_URL = get_config("AZURE_TARGET_STORAGE_REFINED_URL")
 
-# --- Configurações Delta Lake ---
 DELTA_VACUUM_RETENTION_DAYS = 60
 DELTA_OPTIMIZE_FILE_SIZE = 10485760  # 10 MB em bytes
 
@@ -194,9 +188,6 @@ def get_base_path(container, account_type="target", protocol="wasbs"):
         return f"abfss://{container}@{account}.dfs.core.windows.net"
     else:
         return f"wasbs://{container}@{account}.blob.core.windows.net"
-
-
-
 
 # Debug de Credenciais (Seguro)
 print(f"[Config] SOURCE Account: {SOURCE_ACCOUNT}")
