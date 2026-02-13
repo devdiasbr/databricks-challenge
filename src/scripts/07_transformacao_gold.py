@@ -4,10 +4,6 @@ import logging
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
-from dotenv import load_dotenv
-
-# Carrega variáveis de ambiente
-load_dotenv()
 
 """
 Script de Transformação para a Camada Gold (Refined).

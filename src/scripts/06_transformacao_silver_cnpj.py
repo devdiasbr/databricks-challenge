@@ -5,12 +5,8 @@ import logging
 import tqdm
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, trim, lower, when, count, lit, upper
-from dotenv import load_dotenv
 import unicodedata
 from azure.storage.blob import ContainerClient
-
-# Carrega variáveis de ambiente
-load_dotenv()
 
 # Configuração de caminhos
 try:
