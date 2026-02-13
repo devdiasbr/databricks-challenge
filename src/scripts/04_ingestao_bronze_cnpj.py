@@ -41,6 +41,7 @@ if src_dir not in sys.path:
     sys.path.append(src_dir)
 
 from utils.file_validator import SmartFileLoader
+from utils.logging_utils import TqdmLoggingHandler
 
 def get_spark_session():
     """Obtém ou cria a sessão Spark ativa."""
@@ -58,7 +59,8 @@ try:
     from pyspark.dbutils import DBUtils
     dbutils = DBUtils(spark)
 except ImportError:
-    raise ImportError("Este script deve ser executado no Databricks (DBUtils required).")
+    # Mock ou handling para execução local
+    dbutils = None
 from utils import config
 
 protocol = config.configure_spark_access(spark)
@@ -165,10 +167,14 @@ class BlobStorageHandler(logging.Handler):
             os.makedirs(os.path.dirname(self.log_file_path), exist_ok=True)
             with open(self.log_file_path, 'w', encoding='utf-8') as f:
                 f.write(self.log_buffer.getvalue())
-            dbutils.fs.cp(f"file:{self.log_file_path}", blob_path)
-            print(f"Logs saved to: {blob_path}")
+            
+            if dbutils:
+                dbutils.fs.cp(f"file:{self.log_file_path}", blob_path)
+                print(f"Logs saved to: {blob_path}")
+            else:
+                print(f"Local logs saved to: {self.log_file_path}")
         except Exception as e:
-            print(f"Failed to save logs to blob: {str(e)}")
+            print(f"Failed to save logs: {str(e)}")
 
 def setup_logging(pipeline_run_id: str):
     """Configura logging para console e Blob Storage."""
@@ -190,32 +196,35 @@ def setup_logging(pipeline_run_id: str):
     
     return logger, blob_handler
 
-# COMMAND ----------
 
-def ingest_cnpj_autoloader(entity_key, file_pattern, logger):
+def ingest_cnpj(entity_key, file_pattern, logger):
     """
-    Ingestão incremental de ZIPs do CNPJ usando Autoloader.
-    
-    Args:
-        entity_key (str): Chave da entidade no mapeamento.
-        file_pattern (str): Padrão de glob para os arquivos ZIP.
-        logger: Objeto de logging.
+    Ingestão de ZIPs do CNPJ. No Databricks utiliza Autoloader,
+    em ambiente local utiliza leitura batch de arquivos binários.
     """
     entity_name = ENTITY_FOLDER_MAP.get(entity_key, entity_key.lower())
     source_path = SOURCE_ABFSS_PATH
     target_path = f"{TARGET_ABFSS_PATH}/{entity_name}"
     checkpoint_path = f"{TARGET_ABFSS_PATH}/_checkpoints/{entity_name}"
     
-    logger.info(f"🚀 [Autoloader] Processando CNPJ: {entity_name} ({file_pattern})")
+    logger.info(f"🚀 Iniciando Ingestão CNPJ: {entity_name} ({'Autoloader' if config.IS_DATABRICKS else 'Batch'})")
     
-    df_zips = (spark.readStream
-        .format("cloudFiles")
-        .option("cloudFiles.format", "binaryFile")
-        .option("pathGlobFilter", file_pattern)
-        .load(source_path)
-    )
+    if config.IS_DATABRICKS:
+        df_zips = (spark.readStream
+            .format("cloudFiles")
+            .option("cloudFiles.format", "binaryFile")
+            .option("pathGlobFilter", file_pattern)
+            .load(source_path)
+        )
+    else:
+        # Modo Local: Lista arquivos binários que casam com o padrão
+        full_pattern = f"{source_path}/{file_pattern}"
+        df_zips = (spark.read
+            .format("binaryFile")
+            .load(full_pattern)
+        )
     
-    def process_batch(batch_df, batch_id):
+    def process_batch_logic(batch_df):
         if batch_df.count() == 0:
             return
             
@@ -226,7 +235,17 @@ def ingest_cnpj_autoloader(entity_key, file_pattern, logger):
             temp_zip = os.path.join(TMP_EXTRACT_DIR, os.path.basename(zip_path))
             os.makedirs(TMP_EXTRACT_DIR, exist_ok=True)
             
-            dbutils.fs.cp(zip_path, f"file:{temp_zip}")
+            # Copia do storage para local
+            if dbutils:
+                dbutils.fs.cp(zip_path, f"file:{temp_zip}")
+            else:
+                # Local handling
+                if zip_path.startswith("file:"):
+                    import shutil
+                    shutil.copy(zip_path.replace("file:", ""), temp_zip)
+                else:
+                    with open(temp_zip, 'wb') as f:
+                        f.write(row.content)
             
             with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
                 zip_ref.extractall(TMP_EXTRACT_DIR)
@@ -252,6 +271,9 @@ def ingest_cnpj_autoloader(entity_key, file_pattern, logger):
                         else:
                             df_extracted = df_extracted.toDF(*cols[:len(current_cols)])
                     
+                    df_extracted = df_extracted.withColumn("file_source", F.lit(os.path.basename(zip_path)))
+                    df_extracted = df_extracted.withColumn("ingestion_timestamp", F.current_timestamp())
+                    
                     (df_extracted.write
                         .format("delta")
                         .mode("append")
@@ -259,46 +281,46 @@ def ingest_cnpj_autoloader(entity_key, file_pattern, logger):
                         .save(target_path)
                     )
                     
-                    os.remove(local_extracted)
+                    # Limpeza local
+                    try:
+                        os.remove(local_extracted)
+                    except: pass
             
-            os.remove(temp_zip)
+            try:
+                os.remove(temp_zip)
+            except: pass
 
-    query = (df_zips.writeStream
-        .foreachBatch(process_batch)
-        .option("checkpointLocation", checkpoint_path)
-        .trigger(availableNow=True)
-        .start()
-    )
+    if config.IS_DATABRICKS:
+        query = (df_zips.writeStream
+            .foreachBatch(lambda batch_df, batch_id: process_batch_logic(batch_df))
+            .option("checkpointLocation", checkpoint_path)
+            .trigger(availableNow=True)
+            .start()
+        )
+        query.awaitTermination()
+    else:
+        # Modo Local: Batch
+        process_batch_logic(df_zips)
     
-    query.awaitTermination()
     logger.info(f"✅ Ingestão de {entity_name} concluída.")
 
 def run_pipeline():
-    """Executa o pipeline completo de ingestão do CNPJ."""
-    start_time = datetime.now()
-    pipeline_run_id = start_time.strftime('%Y%m%d_%H%M%S')
+    """Executa a pipeline de ingestão."""
+    pipeline_run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     logger, blob_handler = setup_logging(pipeline_run_id)
     
-    logger.info("="*80)
-    logger.info("STARTING CNPJ BRONZE INGESTION")
-    logger.info(f"Run ID: {pipeline_run_id}")
-    logger.info("="*80)
+    logger.info("Starting CNPJ Ingestion Pipeline...")
     
-    logger.info(f"📂 Diretório de Download (ZIPs): {TMP_EXTRACT_DIR}")
-    logger.info(f"📂 Diretório de Staging (Extração): {DBFS_STAGING_DIR}")
-    logger.info(f"📂 Diretório de Logs: {TMP_LOG_DIR}")
-    
-    total_entities = len(CSV_PATTERNS)
-    logger.info(f"Processing {total_entities} entities using Autoloader...")
-    for entity_key, pattern in CSV_PATTERNS.items():
-        zip_pattern = pattern.replace(".csv", ".zip")
-        try:
-            ingest_cnpj_autoloader(entity_key, zip_pattern, logger)
-        except Exception as e:
-            logger.error(f"❌ Erro ao processar {entity_key}: {e}")
-            
-    logger.info("PIPELINE COMPLETED")
-    blob_handler.flush_to_blob(f"{LOGS_ABFSS_PATH}/cnpj_pipeline_{pipeline_run_id}.log")
+    try:
+        for entity_key, file_pattern in CSV_PATTERNS.items():
+            zip_pattern = file_pattern.replace(".csv", ".zip")
+            try:
+                ingest_cnpj(entity_key, zip_pattern, logger)
+            except Exception as e:
+                logger.error(f"Error processing {entity_key}: {str(e)}")
+    finally:
+        log_blob_path = f"{LOGS_ABFSS_PATH}/cnpj_pipeline_{pipeline_run_id}.log"
+        blob_handler.flush_to_blob(log_blob_path)
 
 if __name__ == "__main__":
     run_pipeline()

@@ -4,7 +4,6 @@
 # MAGIC 
 # MAGIC Criação de dimensões e tabelas fato para análise (Silver -> Gold).
 
-# COMMAND ----------
 
 import os
 import sys
@@ -26,9 +25,14 @@ Consolida as dimensões e fatos para consumo final, incluindo a unificação da 
 logger = logging.getLogger("GoldTransformation")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
+    try:
+        handler = TqdmLoggingHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S'))
+        logger.addHandler(handler)
+    except Exception:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
 
 # Configuração de caminhos
 try:
@@ -49,7 +53,6 @@ if src_path not in sys.path:
 import utils.config as config
 from utils.logging_utils import TqdmLoggingHandler
 
-# COMMAND ----------
 
 # Constantes de Auditoria
 CAMPO_ATUALIZACAO = "data_processamento_gold"
@@ -58,7 +61,6 @@ def get_spark_session():
     """Obtém a sessão Spark ativa (Databricks)."""
     return SparkSession.builder.getOrCreate()
 
-# COMMAND ----------
 
 def adicionar_metadados(df):
     """Adiciona colunas de auditoria."""

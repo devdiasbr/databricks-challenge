@@ -4,12 +4,10 @@
 # MAGIC 
 # MAGIC Cria containers necessários e valida a estrutura de diretórios no Azure Blob Storage.
 
-# COMMAND ----------
 
 import os
 import sys
 
-# COMMAND ----------
 
 # Adiciona o diretório 'src' ao sys.path para permitir imports de 'utils'
 # Configuração robusta de caminhos (Híbrido Local/Databricks)
@@ -30,7 +28,6 @@ if src_dir not in sys.path:
 from azure.storage.blob import ContainerClient
 from utils.config import STRUCTURE, get_target_url
 
-# COMMAND ----------
 
 def ensure_container_accessible(container_url, container_name):
     """Verifica se o container é acessível via URL SAS."""
@@ -47,7 +44,6 @@ def ensure_container_accessible(container_url, container_name):
              print("       (Verifique se o token SAS expirou ou está incorreto)")
         return None
 
-# COMMAND ----------
 
 def setup_and_validate_targets():
     """Valida a estrutura de pastas e containers de destino (Raw, Trusted, Refined)."""
@@ -104,7 +100,6 @@ def setup_and_validate_targets():
 
     print("\n✅ Validação Concluída.")
 
-# COMMAND ----------
 
 if __name__ == "__main__":
     setup_and_validate_targets()

@@ -31,6 +31,7 @@ if src_path not in sys.path:
 
 import utils.config as config
 from utils.transformations import BaseTransform, normalize_column_name
+from utils.logging_utils import TqdmLoggingHandler
 logger = logging.getLogger("BronzeToSilver_Balanca")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
@@ -49,30 +50,67 @@ def get_spark_session():
 def list_raw_folders(spark, protocol):
     """
     Lista as pastas dentro de 'balancacomercial/' no container RAW.
-    Usa dbutils (Databricks).
+    Suporta Databricks (dbutils) e Local (Azure SDK).
     """
-    try:
-        from pyspark.dbutils import DBUtils
-        dbutils = DBUtils(spark)
-        
-        base_path = config.get_base_path("raw", "target", protocol)
-        target_path = f"{base_path}/balancacomercial/"
-        
-        logger.info(f"Listando pastas via dbutils em: {target_path}")
-        paths = dbutils.fs.ls(target_path)
-        
-        folders = []
-        for p in paths:
-            name = p.name.strip('/')
-            if '/' in name:
-                name = name.split('/')[-1]
-            folders.append(name)
+    # 1. Tentar via dbutils (Databricks)
+    if config.IS_DATABRICKS:
+        try:
+            from pyspark.dbutils import DBUtils
+            dbutils = DBUtils(spark)
             
-        return sorted(folders)
+            base_path = config.get_base_path("raw", "target", protocol)
+            target_path = f"{base_path}/balancacomercial/"
+            
+            logger.info(f"Listando pastas via dbutils em: {target_path}")
+            paths = dbutils.fs.ls(target_path)
+            
+            folders = []
+            for p in paths:
+                name = p.name.strip('/')
+                if '/' in name:
+                    name = name.split('/')[-1]
+                folders.append(name)
+                
+            return sorted(folders)
+        except Exception as e:
+            logger.warning(f"Falha ao listar via dbutils ({e}). Tentando fallback Azure SDK.")
+
+    # 2. Fallback: Azure SDK (ContainerClient)
+    logger.info("Listando pastas via Azure SDK (ContainerClient)...")
+    
+    target_key = config.get_config("AZURE_STORAGE_ACCOUNT_KEY_TARGET", secret_key=config.KV_SECRET_TARGET)
+    target_account = config.TARGET_ACCOUNT
+    
+    folders = set()
+    try:
+        account_url = f"https://{target_account}.blob.core.windows.net"
+        if target_key:
+            container_client = ContainerClient(account_url=account_url, container_name="raw", credential=target_key)
+        else:
+            # Tenta via SAS se configurado no config.py
+            raw_url = config.TARGET_RAW_URL
+            if raw_url:
+                container_client = ContainerClient.from_container_url(raw_url)
+            else:
+                logger.error("Sem credenciais (Key/URL) para listar pastas via SDK.")
+                return []
+
+        # Lista blobs com prefixo
+        blobs = container_client.list_blobs(name_starts_with="balancacomercial/")
         
+        for blob in blobs:
+            name = blob.name 
+            parts = name.split('/')
+            if len(parts) > 1:
+                subfolder = parts[1]
+                if subfolder and subfolder != "":
+                    folders.add(subfolder)
+                    
     except Exception as e:
-        logger.error(f"Erro ao listar pastas via dbutils: {e}")
-        raise e
+        logger.error(f"Erro ao listar via SDK: {e}")
+        return []
+
+    return sorted(list(folders))
 
 def load_schema(schema_path):
     """Carrega o arquivo JSON de schema com tratamento de encoding."""

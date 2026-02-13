@@ -4,7 +4,6 @@
 # MAGIC 
 # MAGIC Lista arquivos nos containers de origem (Landing/Raw) para diagnóstico e verificação.
 
-# COMMAND ----------
 
 import os
 import sys
@@ -28,7 +27,6 @@ if src_dir not in sys.path:
 from azure.storage.blob import ContainerClient
 from utils.config import STRUCTURE
 
-# COMMAND ----------
 
 def list_landing_blobs():
     """Valida e lista arquivos na camada Landing (Origem)."""
@@ -88,7 +86,6 @@ def list_landing_blobs():
             else:
                 print(f"  ❌ Erro: {str(e)}")
 
-# COMMAND ----------
 
 if __name__ == "__main__":
     list_landing_blobs()

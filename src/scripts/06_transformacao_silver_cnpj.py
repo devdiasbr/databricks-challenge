@@ -52,14 +52,12 @@ if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         logger.addHandler(handler)
 
-# COMMAND ----------
 
 def get_spark_session():
     """Obtém a sessão Spark ativa (Databricks)."""
     return SparkSession.builder.getOrCreate()
 
 
-# COMMAND ----------
 
 
 def list_raw_folders_cnpj(spark=None, protocol=None):
@@ -134,11 +132,9 @@ def list_raw_folders_cnpj(spark=None, protocol=None):
 
     return sorted(list(folders))
 
-# COMMAND ----------
 
 # Função delete_virtual_directory removida (depreciada)
 
-# COMMAND ----------
 
 def load_schema(schema_path):
     """Carrega o arquivo JSON de schema (tenta UTF-8, fallback para Latin1)."""
@@ -155,7 +151,6 @@ def load_schema(schema_path):
         logger.error(f"❌ Erro ao carregar schema JSON de {schema_path}: {e}")
         return {}
 
-# COMMAND ----------
 
 def get_schema_mapping(folder_name, schema):
     """
@@ -187,7 +182,6 @@ def get_schema_mapping(folder_name, schema):
     logger.warning(f"  ⚠️ Nenhum schema específico encontrado para '{folder_name}'. Usando normalização padrão.")
     return []
 
-# COMMAND ----------
 
 def process_cnpj():
     logger.info(f"\n🚀 Iniciando processamento CNPJ: Bronze -> Silver")
@@ -300,7 +294,6 @@ def process_cnpj():
     except Exception:
         pass
 
-# COMMAND ----------
 
 if __name__ == "__main__":
     process_cnpj()
