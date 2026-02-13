@@ -1,11 +1,3 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Ingestão Bronze: Balança Comercial
-# MAGIC 
-# MAGIC Ingestão de dados da Balança Comercial para a camada Bronze (Raw -> Bronze).
-# MAGIC Execução exclusiva para ambiente Databricks.
-
-
 import os
 import sys
 import json
